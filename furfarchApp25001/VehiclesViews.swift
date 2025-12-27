@@ -14,11 +14,11 @@ struct VehiclesListView: View {
                 } label: {
                     HStack(spacing: 12) {
                         vehicleIcon(for: v)
-                            .renderingMode(.template)
+                            .renderingMode(.original)
                             .resizable()
                             .scaledToFit()
                             .frame(width: 28, height: 28)
-                            .foregroundStyle(.primary)
+                        
                         VStack(alignment: .leading) {
                             Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
                                 .font(.headline)
@@ -35,6 +35,7 @@ struct VehiclesListView: View {
                 .swipeActions {
                     Button(role: .destructive) {
                         modelContext.delete(v)
+                        do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
                     } label: { Label("Delete", systemImage: "trash") }
                 }
             }
@@ -109,12 +110,14 @@ struct VehicleFormView: View {
                 // All options in the same view (no submenu)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
-                        typeButton(.car, label: "Car", assetName: "icons8-sedan-100")
+                        // use assets that exist in Assets.xcassets
+                        typeButton(.car, label: "Car", assetName: "icons8-cars-100")
                         typeButton(.van, label: "Van", assetName: "icons8-van-100")
-                        typeButton(.truck, label: "Truck", assetName: "icons8-truck-ramp-100")
-                        typeButton(.trailer, label: "Trailer", assetName: "icons8-trailer-100")
+                        typeButton(.truck, label: "Truck", assetName: "icons8-truck-with-trailer-100")
+                        typeButton(.trailer, label: "Trailer", assetName: "icons8-utility-trailer-96")
                         typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
-                        typeButton(.boat, label: "Boat", assetName: "icons8-boat-100", systemNameFallback: "sailboat")
+                        // no boat asset present; fall back to system sailboat
+                        typeButton(.boat, label: "Boat", systemNameFallback: "sailboat")
                         typeButton(.motorbike, label: "Motorbike", assetName: "icons8-motorbike-100")
                         typeButton(.other, label: "Other", systemNameFallback: "questionmark.circle")
                     }
@@ -154,9 +157,10 @@ struct VehicleFormView: View {
                 Button("Save") { save() }
             }
             if let vehicle {
-                ToolbarItem(placement: .bottomBar) {
+                ToolbarItem {
                     Button(role: .destructive) {
                         modelContext.delete(vehicle)
+                        do { try modelContext.save() } catch { print("Error deleting vehicle: \(error)") }
                         dismiss()
                     } label: { Label("Delete", systemImage: "trash") }
                 }
@@ -178,7 +182,7 @@ struct VehicleFormView: View {
             let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
             modelContext.insert(new)
         }
-        try? modelContext.save()
+        do { try modelContext.save() } catch { print("Error saving vehicle: \(error)") }
         dismiss()
     }
 
@@ -210,16 +214,30 @@ struct TrailerPickerInline: View {
     @State private var newPlate = ""
     @State private var newNotes = ""
 
+    // internal id-based selection for Picker (UUID is Hashable)
+    @State private var selectedTrailerID: UUID? = nil
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Existing", selection: $selection) {
-                Text("None").tag(Trailer?.none)
+            Picker("Existing", selection: $selectedTrailerID) {
+                Text("None").tag(nil as UUID?)
                 ForEach(trailers) { t in
                     Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
-                        .tag(Trailer?.some(t))
+                        .tag(t.id as UUID?)
                 }
             }
             .pickerStyle(.menu)
+            .onAppear { selectedTrailerID = selection?.id }
+            .onChange(of: selectedTrailerID) { _old, newID in
+                if let id = newID { selection = trailers.first(where: { $0.id == id }) }
+                else { selection = nil }
+            }
+            .onChange(of: trailers) { _old, _new in
+                if let sel = selection, !trailers.contains(where: { $0.id == sel.id }) {
+                    selection = nil
+                    selectedTrailerID = nil
+                }
+            }
 
             Button {
                 creating.toggle()
@@ -235,7 +253,9 @@ struct TrailerPickerInline: View {
                 Button {
                     let t = Trailer(brandModel: newBrandModel, color: newColor, plate: newPlate, notes: newNotes, lastEdited: .now)
                     modelContext.insert(t)
+                    do { try modelContext.save() } catch { print("Error saving trailer: \(error)") }
                     selection = t
+                    selectedTrailerID = t.id
                     creating = false
                     newBrandModel = ""; newColor = ""; newPlate = ""; newNotes = ""
                 } label: {
@@ -307,7 +327,7 @@ struct AddVehicleFlowView: View {
         let now = Date()
         let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
         modelContext.insert(new)
-        try? modelContext.save()
+        do { try modelContext.save() } catch { print("Error saving new vehicle: \(error)") }
         dismiss()
     }
 
@@ -326,4 +346,3 @@ struct AddVehicleFlowView: View {
         .buttonStyle(.plain)
     }
 }
-

@@ -17,7 +17,7 @@ import SwiftData
 @main
 struct furfarchApp25001App: App {
     var sharedModelContainer: ModelContainer = {
-        // Register all @Model types so SwiftData knows about Vehicle, Trailer, DriveLog, Checklist, etc.
+        // Register all @Model types so SwiftData knows about them
         let schema = Schema([
             Item.self,
             Vehicle.self,
@@ -26,7 +26,6 @@ struct furfarchApp25001App: App {
             Checklist.self,
             ChecklistItem.self,
         ])
-
         do {
             return try ModelContainer(for: schema)
         } catch {
