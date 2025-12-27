@@ -10,10 +10,11 @@ struct VehiclesListView: View {
         List {
             ForEach(vehicles) { v in
                 NavigationLink {
-                    VehicleFormView(vehicle: v)
+                    VehicleFormView(vehicle: v).environment(\.modelContext, modelContext)
                 } label: {
                     HStack(spacing: 12) {
                         vehicleIcon(for: v)
+                            .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .frame(width: 28, height: 28)
@@ -45,34 +46,34 @@ struct VehiclesListView: View {
             }
         }
         .sheet(isPresented: $showingAdd) {
-            NavigationStack { VehicleFormView(vehicle: nil) }
+            NavigationStack {
+                AddVehicleFlowView()
+            }
+            .environment(\.modelContext, modelContext)
         }
     }
 
-    @ViewBuilder
-    private func vehicleIcon(for v: Vehicle) -> some View {
-        if v.type == .car || v.type == .van {
-            if v.trailer != nil {
-                Image("car_with_trailer_2").renderingMode(.template)
-            } else {
-                Image(v.type == .car ? "icons8-sedan-100" : "icons8-van-100").renderingMode(.template)
-            }
-        } else if v.type == .truck {
-            if v.trailer != nil {
-                Image("icons8-truck-with-trailer-50").renderingMode(.template)
-            } else {
-                Image("icons8-truck-ramp-100").renderingMode(.template)
-            }
-        } else if v.type == .trailer {
-            Image("icons8-trailer-100").renderingMode(.template)
-        } else if v.type == .camper {
-            Image("icons8-camper-100").renderingMode(.template)
-        } else if v.type == .boat {
-            Image(systemName: "sailboat")
-        } else if v.type == .motorbike {
-            Image("icons8-motorbike-100").renderingMode(.template)
-        } else {
-            Image(systemName: "questionmark.circle")
+    private func vehicleIcon(for v: Vehicle) -> Image {
+        switch v.type {
+        case .car:
+            if v.trailer != nil { return Image("car_with_trailer_2") }
+            return Image(systemName: "car")
+        case .van:
+            if v.trailer != nil { return Image("car_with_trailer_2") }
+            return Image("icons8-van-100")
+        case .truck:
+            if v.trailer != nil { return Image("icons8-truck-with-trailer-50") }
+            return Image(systemName: "truck.box")
+        case .trailer:
+            return Image("icons8-utility-trailer-96")
+        case .camper:
+            return Image("icons8-camper-100")
+        case .boat:
+            return Image(systemName: "sailboat")
+        case .motorbike:
+            return Image("icons8-motorbike-100")
+        case .other:
+            return Image(systemName: "questionmark.circle")
         }
     }
 }
@@ -113,7 +114,7 @@ struct VehicleFormView: View {
                         typeButton(.truck, label: "Truck", assetName: "icons8-truck-ramp-100")
                         typeButton(.trailer, label: "Trailer", assetName: "icons8-trailer-100")
                         typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
-                        typeButton(.boat, label: "Boat", systemNameFallback: "sailboat")
+                        typeButton(.boat, label: "Boat", assetName: "icons8-boat-100", systemNameFallback: "sailboat")
                         typeButton(.motorbike, label: "Motorbike", assetName: "icons8-motorbike-100")
                         typeButton(.other, label: "Other", systemNameFallback: "questionmark.circle")
                     }
@@ -177,6 +178,7 @@ struct VehicleFormView: View {
             let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
             modelContext.insert(new)
         }
+        try? modelContext.save()
         dismiss()
     }
 
@@ -201,7 +203,7 @@ struct VehicleFormView: View {
 struct TrailerPickerInline: View {
     @Environment(\.modelContext) private var modelContext
     @Binding var selection: Trailer?
-    @Query private var trailers: [Trailer]
+    @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
     @State private var creating = false
     @State private var newBrandModel = ""
     @State private var newColor = ""
@@ -210,12 +212,11 @@ struct TrailerPickerInline: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Existing", selection: Binding(get: { selection?.id }, set: { id in
-                selection = trailers.first(where: { $0.id == id })
-            })) {
-                Text("None").tag(UUID?.none)
+            Picker("Existing", selection: $selection) {
+                Text("None").tag(Trailer?.none)
                 ForEach(trailers) { t in
-                    Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel).tag(UUID?.some(t.id))
+                    Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
+                        .tag(Trailer?.some(t))
                 }
             }
             .pickerStyle(.menu)
@@ -244,3 +245,85 @@ struct TrailerPickerInline: View {
         }
     }
 }
+struct AddVehicleFlowView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var step: Int = 1
+    @State private var type: VehicleType? = nil
+    @State private var brandModel: String = ""
+    @State private var color: String = ""
+    @State private var plate: String = ""
+    @State private var notes: String = ""
+    @State private var trailer: Trailer? = nil
+
+    var body: some View {
+        Group {
+            if step == 1 {
+                Form {
+                    Section("Select Type") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 16) {
+                                typeButton(.car, label: "Car", systemName: "car")
+                                typeButton(.van, label: "Van", assetName: "icons8-van-100")
+                                typeButton(.truck, label: "Truck", systemName: "truck.box")
+                                typeButton(.trailer, label: "Trailer", assetName: "icons8-trailer-100")
+                                typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
+                                typeButton(.boat, label: "Boat", systemName: "sailboat")
+                                typeButton(.motorbike, label: "Motorbike", assetName: "icons8-motorbike-100")
+                                typeButton(.other, label: "Other", systemName: "questionmark.circle")
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+                .navigationTitle("New Vehicle")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Next") { step = 2 }.disabled(type == nil) }
+                }
+            } else {
+                Form {
+                    Section("Details") {
+                        TextField("Brand / Model", text: $brandModel)
+                        TextField("Color", text: $color)
+                        TextField("Plate", text: $plate)
+                        TextField("Notes", text: $notes, axis: .vertical)
+                    }
+                    Section("Trailer (Optional)") { TrailerPickerInline(selection: $trailer) }
+                    Section(footer: Text("Last edited: \(Date(), style: .date) \(Date(), style: .time)")) { EmptyView() }
+                }
+                .navigationTitle("Vehicle Details")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Back") { step = 1 } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(type == nil) }
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let type else { return }
+        let now = Date()
+        let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
+        modelContext.insert(new)
+        try? modelContext.save()
+        dismiss()
+    }
+
+    @ViewBuilder
+    private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil) -> some View {
+        Button { type = t } label: {
+            VStack(spacing: 6) {
+                if let assetName { Image(assetName).renderingMode(.template).resizable().scaledToFit().frame(width: 28, height: 28) }
+                else if let systemName { Image(systemName: systemName).resizable().scaledToFit().frame(width: 28, height: 28) }
+                Text(label).font(.caption)
+            }
+            .padding(8)
+            .background(type == t ? Color.accentColor.opacity(0.15) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+}
+

@@ -5,6 +5,12 @@
 //  Created by Chris Furfari on 27.12.2025.
 //
 
+/*
+ App Display Name:
+ Set in target -> Info (or Info.plist) as CFBundleDisplayName to:
+ "Personal Vehicle and Drive / Checklist Log"
+*/
+
 import SwiftUI
 import SwiftData
 
@@ -30,3 +36,4 @@ struct furfarchApp25001App: App {
         .modelContainer(sharedModelContainer)
     }
 }
+

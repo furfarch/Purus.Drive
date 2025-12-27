@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SectionsView: View {
+    @State private var showingAbout = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -21,28 +23,15 @@ struct SectionsView: View {
                 }
             }
             .navigationTitle("Sections")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showingAbout = true } label: { Label("About", systemImage: "info.circle") }
+                }
+            }
+            .sheet(isPresented: $showingAbout) {
+                NavigationStack { AboutView().navigationTitle("About") }
+            }
         }
-    }
-}
-
-struct VehiclesListView: View {
-    var body: some View {
-        Text("Vehicles List View")
-            .navigationTitle("Vehicles")
-    }
-}
-
-struct DriveLogListView: View {
-    var body: some View {
-        Text("Drive Log List View")
-            .navigationTitle("Drive Log")
-    }
-}
-
-struct ChecklistListView: View {
-    var body: some View {
-        Text("Checklist List View")
-            .navigationTitle("Checklist")
     }
 }
 

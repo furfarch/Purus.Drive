@@ -11,9 +11,6 @@ struct AboutView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("About")
-                    .font(.largeTitle)
-                    .bold()
 
                 Text("Personal Vehicle and Drive / Checklist Log")
                     .font(.headline)
@@ -45,7 +42,6 @@ struct AboutView: View {
             }
             .padding()
         }
-        .navigationTitle("About")
     }
 }
 
