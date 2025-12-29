@@ -3,38 +3,90 @@ import PhotosUI
 
 struct CarPhotoPickerView: View {
     var completion: (UIImage?) -> Void
+    @State private var showingAction = false
     @State private var showingCamera = false
+    @State private var showingLibrary = false
     @State private var libraryItem: PhotosPickerItem? = nil
 
     var body: some View {
-        Menu {
-            Button("Take Photo") { showingCamera = true }
-            PhotosPicker(selection: $libraryItem, matching: .images, photoLibrary: .shared()) {
-                Label("Choose From Library", systemImage: "photo")
-            }
-        } label: {
+        Button(action: { showingAction = true }) {
             Label("Add Photo", systemImage: "camera")
         }
-        .onChange(of: libraryItem) { item in
-            guard let item = item else { return }
-            Task {
-                do {
-                    if let data = try await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(ui) }
-                    } else {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(nil) }
+        .confirmationDialog("Photo", isPresented: $showingAction, titleVisibility: .visible) {
+            Button("Take Photo") { showingCamera = true }
+            Button("Choose From Library") { showingLibrary = true }
+            Button("Cancel", role: .cancel) { }
+        }
+        .sheet(isPresented: $showingLibrary) {
+            LibraryPickerView(selection: $libraryItem) {
+                // user tapped done/cancel; load item if present
+                if let item = libraryItem {
+                    Task {
+                        do {
+                            if let data = try await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(ui) }
+                            } else {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                            }
+                        } catch {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                        }
+                        // clear selection to avoid retaining the item
+                        DispatchQueue.main.async { libraryItem = nil }
                     }
-                } catch {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(nil) }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
                 }
-                DispatchQueue.main.async { libraryItem = nil }
+                showingLibrary = false
             }
         }
         .fullScreenCover(isPresented: $showingCamera) {
             CameraPickerUniversal { img in
-                // keep a short delay before calling completion to avoid presentation races
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { completion(img) }
                 showingCamera = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(img) }
+            }
+        }
+        .onChange(of: libraryItem) { oldItem, newItem in
+            guard let item = newItem else { return }
+            Task {
+                do {
+                    if let data = try await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(ui) }
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                    }
+                } catch {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                }
+                // clear selection to avoid retaining the item
+                DispatchQueue.main.async { libraryItem = nil }
+            }
+        }
+    }
+}
+
+// Small wrapper view hosting a PhotosPicker
+struct LibraryPickerView: View {
+    @Binding var selection: PhotosPickerItem?
+    var onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                PhotosPicker(selection: $selection, matching: .images, photoLibrary: .shared()) {
+                    Label("Select Photo", systemImage: "photo")
+                        .padding()
+                }
+                Spacer()
+            }
+            .navigationTitle("Choose Photo")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { onDone() }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { selection = nil; onDone() }
+                }
             }
         }
     }
