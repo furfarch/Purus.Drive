@@ -49,16 +49,18 @@ final class Vehicle {
     var color: String
     var plate: String
     var notes: String
+    var photoData: Data?
     var trailer: Trailer?
     var lastEdited: Date
 
-    init(type: VehicleType, brandModel: String = "", color: String = "", plate: String = "", notes: String = "", trailer: Trailer? = nil, lastEdited: Date = .now) {
+    init(type: VehicleType, brandModel: String = "", color: String = "", plate: String = "", notes: String = "", trailer: Trailer? = nil, lastEdited: Date = .now, photoData: Data? = nil) {
         self.id = UUID()
         self.type = type
         self.brandModel = brandModel
         self.color = color
         self.plate = plate
         self.notes = notes
+        self.photoData = photoData
         self.trailer = trailer
         self.lastEdited = lastEdited
     }

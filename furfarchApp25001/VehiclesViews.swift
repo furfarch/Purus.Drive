@@ -14,7 +14,6 @@ struct VehiclesListView: View {
                 } label: {
                     HStack(spacing: 12) {
                         vehicleIcon(for: v)
-                            .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .frame(width: 28, height: 28)
@@ -113,7 +112,7 @@ struct VehicleFormView: View {
                         typeButton(.car, label: "Car", assetName: "icons8-sedan-100")
                         typeButton(.van, label: "Van", assetName: "icons8-van-100")
                         typeButton(.truck, label: "Truck", assetName: "icons8-truck-ramp-100")
-                        typeButton(.trailer, label: "Trailer", assetName: "icons8-trailer-100")
+                        typeButton(.trailer, label: "Trailer", assetName: "icons8-utility-trailer-96")
                         typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
                         typeButton(.boat, label: "Boat", assetName: "icons8-boat-100", systemNameFallback: "sailboat")
                         typeButton(.motorbike, label: "Motorbike", assetName: "icons8-motorbike-100")
@@ -190,7 +189,7 @@ struct VehicleFormView: View {
             type = t
         } label: {
             VStack(spacing: 6) {
-                if let assetName { Image(assetName).renderingMode(.template).resizable().scaledToFit().frame(width: 28, height: 28) }
+                if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
                 else if let systemNameFallback { Image(systemName: systemNameFallback).resizable().scaledToFit().frame(width: 28, height: 28) }
                 Text(label).font(.caption)
             }
@@ -269,7 +268,7 @@ struct AddVehicleFlowView: View {
                                 typeButton(.car, label: "Car", systemName: "car")
                                 typeButton(.van, label: "Van", assetName: "icons8-van-100")
                                 typeButton(.truck, label: "Truck", systemName: "truck.box")
-                                typeButton(.trailer, label: "Trailer", assetName: "icons8-trailer-100")
+                                typeButton(.trailer, label: "Trailer", assetName: "icons8-utility-trailer-96")
                                 typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
                                 typeButton(.boat, label: "Boat", systemName: "sailboat")
                                 typeButton(.motorbike, label: "Motorbike", assetName: "icons8-motorbike-100")
@@ -317,7 +316,7 @@ struct AddVehicleFlowView: View {
     private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil) -> some View {
         Button { type = t } label: {
             VStack(spacing: 6) {
-                if let assetName { Image(assetName).renderingMode(.template).resizable().scaledToFit().frame(width: 28, height: 28) }
+                if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
                 else if let systemName { Image(systemName: systemName).resizable().scaledToFit().frame(width: 28, height: 28) }
                 Text(label).font(.caption)
             }
