@@ -2,28 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleName</key>
-	<string>furfarchApp25001</string>
-
-	<key>CFBundleIdentifier</key>
-	<string>furfarch.furfarchApp25001</string>
-
-	<key>CFBundleVersion</key>
-	<string>1</string>
-
-	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
-
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
-
-	<!-- Required for Mac App Store submissions: choose appropriate category -->
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
+    <key>CFBundleDisplayName</key>
+    <string>furfarchApp25001</string>
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs access to the camera to take vehicle photos and scan license plates.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>This app needs access to your photo library to choose vehicle photos.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>This app may save photos of vehicles to your photo library.</string>
 </dict>
 </plist>

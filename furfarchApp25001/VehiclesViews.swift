@@ -258,6 +258,10 @@ struct AddVehicleFlowView: View {
     @State private var notes: String = ""
     @State private var trailer: Trailer? = nil
 
+    // new states for photo and plate scanning
+    @State private var carPhoto: UIImage? = nil
+    @State private var showingPlateScanner = false
+
     var body: some View {
         Group {
             if step == 1 {
@@ -288,9 +292,40 @@ struct AddVehicleFlowView: View {
                     Section("Details") {
                         TextField("Brand / Model", text: $brandModel)
                         TextField("Color", text: $color)
-                        TextField("Plate", text: $plate)
+
+                        // Plate field with a Scan button
+                        HStack {
+                            TextField("Plate", text: $plate)
+                            Button {
+                                showingPlateScanner = true
+                            } label: { Image(systemName: "camera.viewfinder") }
+                            .buttonStyle(.bordered)
+                        }
+                        .sheet(isPresented: $showingPlateScanner) {
+                            PlateScannerView { recognized in
+                                self.plate = recognized
+                                showingPlateScanner = false
+                            }
+                        }
+
                         TextField("Notes", text: $notes, axis: .vertical)
                     }
+
+                    // Car Photo area like in VehicleFormView
+                    Section(header: Text("Car Photo")) {
+                        if let carPhoto {
+                            Image(uiImage: carPhoto)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 160)
+                                .clipped()
+                                .cornerRadius(12)
+                        }
+                        CarPhotoPickerView { img in
+                            self.carPhoto = img
+                        }
+                    }
+
                     Section("Trailer (Optional)") { TrailerPickerInline(selection: $trailer) }
                     Section(footer: Text("Last edited: \(Date(), style: .date) \(Date(), style: .time)")) { EmptyView() }
                 }
@@ -307,6 +342,10 @@ struct AddVehicleFlowView: View {
         guard let type else { return }
         let now = Date()
         let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
+        // attach photo data if available
+        if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+            new.photoData = data
+        }
         modelContext.insert(new)
         do { try modelContext.save() } catch { print("Error saving new vehicle: \(error)") }
         dismiss()
