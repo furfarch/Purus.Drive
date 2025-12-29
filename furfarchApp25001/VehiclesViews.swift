@@ -89,6 +89,12 @@ struct VehicleFormView: View {
     @State private var notes: String
     @State private var trailer: Trailer?
 
+    // photo + scanner state
+    @State private var carPhoto: UIImage? = nil
+    @State private var showingPlateScanner = false
+    @State private var showingCarPhotoPicker = false
+    @State private var saveErrorMessage: String? = nil
+
     var vehicle: Vehicle?
 
     init(vehicle: Vehicle?) {
@@ -99,6 +105,11 @@ struct VehicleFormView: View {
         _plate = State(initialValue: vehicle?.plate ?? "")
         _notes = State(initialValue: vehicle?.notes ?? "")
         _trailer = State(initialValue: vehicle?.trailer)
+
+        // preload photo if present
+        if let data = vehicle?.photoData, let img = UIImage(data: data) {
+            _carPhoto = State(initialValue: img)
+        }
     }
 
     @Query private var trailers: [Trailer]
@@ -109,9 +120,9 @@ struct VehicleFormView: View {
                 // All options in the same view (no submenu)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
-                        typeButton(.car, label: "Car", assetName: "icons8-sedan-100")
+                        typeButton(.car, label: "Car", systemName: "car")
                         typeButton(.van, label: "Van", assetName: "icons8-van-100")
-                        typeButton(.truck, label: "Truck", assetName: "icons8-truck-ramp-100")
+                        typeButton(.truck, label: "Truck", systemName: "truck.box")
                         typeButton(.trailer, label: "Trailer", assetName: "icons8-utility-trailer-96")
                         typeButton(.camper, label: "Camper", assetName: "icons8-camper-100")
                         typeButton(.boat, label: "Boat", assetName: "icons8-boat-100", systemNameFallback: "sailboat")
@@ -125,12 +136,43 @@ struct VehicleFormView: View {
             Section("Details") {
                 TextField("Brand / Model", text: $brandModel)
                 TextField("Color", text: $color)
-                TextField("Plate", text: $plate)
+
+                // Plate field with scan button
+                HStack {
+                    TextField("Plate", text: $plate)
+                    Button {
+                        showingPlateScanner = true
+                    } label: { Image(systemName: "camera.viewfinder") }
+                    .buttonStyle(.bordered)
+                }
+                .sheet(isPresented: $showingPlateScanner) {
+                    PlateScannerView { recognized in
+                        self.plate = recognized
+                        showingPlateScanner = false
+                    }
+                }
+
                 TextField("Notes", text: $notes, axis: .vertical)
             }
 
             Section("Trailer (Optional)") {
                 TrailerPickerInline(selection: $trailer)
+            }
+
+            // Car photo area
+            Section(header: Text("Car Photo")) {
+                if let carPhoto {
+                    Image(uiImage: carPhoto)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 160)
+                        .clipped()
+                        .cornerRadius(12)
+                }
+                // keep inline picker as well
+                CarPhotoPickerView { img in
+                    self.carPhoto = img
+                }
             }
 
             if vehicle != nil {
@@ -147,54 +189,61 @@ struct VehicleFormView: View {
         }
         .navigationTitle(vehicle == nil ? "New Vehicle" : "Edit Vehicle")
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-            }
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
             if let vehicle = vehicle {
-                ToolbarItem {
-                    Button(role: .destructive) {
-                        modelContext.delete(vehicle)
-                        do { try modelContext.save() } catch { print("Error deleting vehicle: \(error)") }
-                        dismiss()
-                    } label: { Label("Delete", systemImage: "trash") }
-                }
+                ToolbarItem { Button(role: .destructive) { modelContext.delete(vehicle); try? modelContext.save(); dismiss() } label: { Label("Delete", systemImage: "trash") } }
             }
+        }
+        .alert("Save error", isPresented: Binding(get: { saveErrorMessage != nil }, set: { if !$0 { saveErrorMessage = nil } })) {
+            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "Unknown error")
         }
     }
 
     private func save() {
         let now = Date()
-        if let vehicle {
-            vehicle.type = type
-            vehicle.brandModel = brandModel
-            vehicle.color = color
-            vehicle.plate = plate
-            vehicle.notes = notes
-            vehicle.trailer = trailer
-            vehicle.lastEdited = now
-        } else {
-            let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
-            modelContext.insert(new)
+        do {
+            if let vehicle {
+                vehicle.type = type
+                vehicle.brandModel = brandModel
+                vehicle.color = color
+                vehicle.plate = plate
+                vehicle.notes = notes
+                vehicle.trailer = trailer
+                vehicle.lastEdited = now
+                if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+                    vehicle.photoData = data
+                }
+                try modelContext.save()
+            } else {
+                let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: trailer, lastEdited: now)
+                if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+                    new.photoData = data
+                }
+                modelContext.insert(new)
+                try modelContext.save()
+            }
+            dismiss()
+        } catch {
+            saveErrorMessage = "Failed to save vehicle: \(error)"
+            print(saveErrorMessage!)
         }
-        do { try modelContext.save() } catch { print("Error saving vehicle: \(error)") }
-        dismiss()
     }
 
-    @ViewBuilder
-    private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemNameFallback: String? = nil) -> some View {
+    private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil, systemNameFallback: String? = nil) -> some View {
         Button {
+            // Update the local state for type
             type = t
         } label: {
             VStack(spacing: 6) {
                 if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
+                else if let systemName { Image(systemName: systemName).resizable().scaledToFit().frame(width: 28, height: 28) }
                 else if let systemNameFallback { Image(systemName: systemNameFallback).resizable().scaledToFit().frame(width: 28, height: 28) }
                 Text(label).font(.caption)
             }
             .padding(8)
-            .background(type == t ? Color.accentColor.opacity(0.15) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -258,9 +307,11 @@ struct AddVehicleFlowView: View {
     @State private var notes: String = ""
     @State private var trailer: Trailer? = nil
 
-    // new states for photo and plate scanning
+    // add photo + scanner states here as well
     @State private var carPhoto: UIImage? = nil
     @State private var showingPlateScanner = false
+    @State private var showingCarPhotoPicker = false
+    @State private var saveErrorMessage: String? = nil
 
     var body: some View {
         Group {
@@ -293,7 +344,7 @@ struct AddVehicleFlowView: View {
                         TextField("Brand / Model", text: $brandModel)
                         TextField("Color", text: $color)
 
-                        // Plate field with a Scan button
+                        // Plate field with scan button
                         HStack {
                             TextField("Plate", text: $plate)
                             Button {
@@ -311,7 +362,7 @@ struct AddVehicleFlowView: View {
                         TextField("Notes", text: $notes, axis: .vertical)
                     }
 
-                    // Car Photo area like in VehicleFormView
+                    // Car Photo area
                     Section(header: Text("Car Photo")) {
                         if let carPhoto {
                             Image(uiImage: carPhoto)
@@ -336,6 +387,9 @@ struct AddVehicleFlowView: View {
                 }
             }
         }
+        .alert("Save error", isPresented: Binding(get: { saveErrorMessage != nil }, set: { if !$0 { saveErrorMessage = nil } })) {
+            Button("OK", role: .cancel) { saveErrorMessage = nil }
+        } message: { Text(saveErrorMessage ?? "Unknown error") }
     }
 
     private func save() {
@@ -347,13 +401,19 @@ struct AddVehicleFlowView: View {
             new.photoData = data
         }
         modelContext.insert(new)
-        do { try modelContext.save() } catch { print("Error saving new vehicle: \(error)") }
-        dismiss()
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            saveErrorMessage = "Failed to save new vehicle: \(error)"
+            print(saveErrorMessage!)
+        }
     }
 
-    @ViewBuilder
     private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil) -> some View {
-        Button { type = t } label: {
+        Button {
+            type = t
+        } label: {
             VStack(spacing: 6) {
                 if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
                 else if let systemName { Image(systemName: systemName).resizable().scaledToFit().frame(width: 28, height: 28) }
