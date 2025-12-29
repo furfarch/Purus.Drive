@@ -4,8 +4,9 @@ import PhotosUI
 struct CarPhotoPickerView: View {
     var completion: (UIImage?) -> Void
     @State private var showingAction = false
-    @State private var showingPHPicker = false
     @State private var showingCamera = false
+    @State private var showingLibrary = false
+    @State private var libraryItem: PhotosPickerItem? = nil
 
     var body: some View {
         Button(action: { showingAction = true }) {
@@ -13,104 +14,64 @@ struct CarPhotoPickerView: View {
         }
         .confirmationDialog("Photo", isPresented: $showingAction, titleVisibility: .visible) {
             Button("Take Photo") { showingCamera = true }
-            Button("Choose From Library") { showingPHPicker = true }
+            Button("Choose From Library") { showingLibrary = true }
             Button("Cancel", role: .cancel) { }
         }
-        .sheet(isPresented: $showingPHPicker) {
-            PhotoPicker(filter: .images) { result in
-                showingPHPicker = false
-                switch result {
-                case .success(let img): completion(img)
-                case .failure(_): completion(nil)
+        .sheet(isPresented: $showingLibrary) {
+            LibraryPickerView(selection: $libraryItem) {
+                // user tapped done/cancel; load item if present
+                if let item = libraryItem {
+                    Task {
+                        do {
+                            if let data = try await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(ui) }
+                            } else {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                            }
+                        } catch {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
+                        }
+                        // clear selection to avoid retaining the item
+                        DispatchQueue.main.async { libraryItem = nil }
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(nil) }
                 }
+                showingLibrary = false
             }
         }
-        .sheet(isPresented: $showingCamera) {
+        .fullScreenCover(isPresented: $showingCamera) {
             CameraPickerUniversal { img in
                 showingCamera = false
-                completion(img)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { completion(img) }
             }
         }
     }
 }
 
-// MARK: - PhotoPicker wrapper (PHPicker)
-struct PhotoPicker: UIViewControllerRepresentable {
-    var filter: PHPickerFilter = .images
-    var completion: (Result<UIImage, Error>) -> Void
+// Small wrapper view hosting a PhotosPicker
+struct LibraryPickerView: View {
+    @Binding var selection: PhotosPickerItem?
+    var onDone: () -> Void
 
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var config = PHPickerConfiguration(photoLibrary: PHPhotoLibrary.shared())
-        config.filter = filter
-        config.selectionLimit = 1
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let parent: PhotoPicker
-
-        init(_ parent: PhotoPicker) { self.parent = parent }
-
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true, completion: nil)
-
-            guard let item = results.first?.itemProvider, item.canLoadObject(ofClass: UIImage.self) else {
-                parent.completion(.failure(NSError(domain: "Picker", code: 1)))
-                return
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                PhotosPicker(selection: $selection, matching: .images, photoLibrary: .shared()) {
+                    Label("Select Photo", systemImage: "photo")
+                        .padding()
+                }
+                Spacer()
             }
-
-            item.loadObject(ofClass: UIImage.self) { object, error in
-                DispatchQueue.main.async {
-                    if let err = error { self.parent.completion(.failure(err)); return }
-                    if let img = object as? UIImage { self.parent.completion(.success(img)); return }
-                    self.parent.completion(.failure(NSError(domain: "Picker", code: 2)))
+            .navigationTitle("Choose Photo")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { onDone() }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { selection = nil; onDone() }
                 }
             }
-        }
-    }
-}
-
-// MARK: - Camera picker wrapper (UIImagePickerController)
-struct CameraPickerUniversal: UIViewControllerRepresentable {
-    var completion: (UIImage?) -> Void
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.delegate = context.coordinator
-        #if targetEnvironment(simulator)
-        // Simulator has no camera; present photo library instead
-        picker.sourceType = .photoLibrary
-        #else
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
-        picker.cameraCaptureMode = .photo
-        #endif
-        picker.allowsEditing = false
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
-        let parent: CameraPickerUniversal
-        init(_ parent: CameraPickerUniversal) { self.parent = parent }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            parent.completion(nil)
-            picker.dismiss(animated: true, completion: nil)
-        }
-
-        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            let image = info[.originalImage] as? UIImage
-            parent.completion(image)
-            picker.dismiss(animated: true, completion: nil)
         }
     }
 }

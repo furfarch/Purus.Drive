@@ -169,9 +169,34 @@ struct VehicleFormView: View {
                         .clipped()
                         .cornerRadius(12)
                 }
-                // keep inline picker as well
+                // keep inline picker as well (set on main thread to avoid race conditions)
                 CarPhotoPickerView { img in
-                    self.carPhoto = img
+                    DispatchQueue.main.async {
+                        if let img = img {
+                            self.carPhoto = img
+                            print("DEBUG: VehicleFormView carPhoto set (vehicle id=\(vehicle?.id.uuidString ?? "new"))")
+                        } else {
+                            print("DEBUG: VehicleFormView CarPhotoPicker returned nil")
+                        }
+                    }
+                }
+
+                // allow removing an existing photo when editing
+                if vehicle != nil && (carPhoto != nil || vehicle?.photoData != nil) {
+                    Button(role: .destructive) {
+                        if let vehicle = vehicle {
+                            vehicle.photoData = nil
+                            carPhoto = nil
+                            do {
+                                try modelContext.save()
+                                print("DEBUG: removed photo for vehicle id=\(vehicle.id)")
+                            } catch {
+                                print("DEBUG: failed to remove photo: \(error)")
+                            }
+                        }
+                    } label: {
+                        Label("Remove Photo", systemImage: "trash")
+                    }
                 }
             }
 
@@ -236,6 +261,7 @@ struct VehicleFormView: View {
         Button {
             // Update the local state for type
             type = t
+            print("DEBUG: selected type=\(t)")
         } label: {
             VStack(spacing: 6) {
                 if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
@@ -312,6 +338,7 @@ struct AddVehicleFlowView: View {
     @State private var showingPlateScanner = false
     @State private var showingCarPhotoPicker = false
     @State private var saveErrorMessage: String? = nil
+    @State private var saveSuccessMessage: String? = nil
 
     var body: some View {
         Group {
@@ -373,7 +400,14 @@ struct AddVehicleFlowView: View {
                                 .cornerRadius(12)
                         }
                         CarPhotoPickerView { img in
-                            self.carPhoto = img
+                            DispatchQueue.main.async {
+                                if let img = img {
+                                    self.carPhoto = img
+                                    print("DEBUG: AddVehicleFlowView carPhoto set (type=\(type?.rawValue ?? "?")")
+                                } else {
+                                    print("DEBUG: AddVehicleFlowView CarPhotoPicker returned nil")
+                                }
+                            }
                         }
                     }
 
@@ -390,6 +424,13 @@ struct AddVehicleFlowView: View {
         .alert("Save error", isPresented: Binding(get: { saveErrorMessage != nil }, set: { if !$0 { saveErrorMessage = nil } })) {
             Button("OK", role: .cancel) { saveErrorMessage = nil }
         } message: { Text(saveErrorMessage ?? "Unknown error") }
+        .alert("Success", isPresented: Binding(get: { saveSuccessMessage != nil }, set: { if !$0 { saveSuccessMessage = nil } })) {
+            Button("OK", role: .cancel) {
+                // Dismiss sheet when user acknowledges success
+                dismiss()
+                saveSuccessMessage = nil
+            }
+        } message: { Text(saveSuccessMessage ?? "Vehicle saved successfully!") }
     }
 
     private func save() {
@@ -403,7 +444,9 @@ struct AddVehicleFlowView: View {
         modelContext.insert(new)
         do {
             try modelContext.save()
-            dismiss()
+            print("DEBUG: saved new vehicle id=\(new.id) type=\(new.type) brandModel=\(new.brandModel)")
+            // show success alert — user will dismiss the sheet by tapping OK
+            saveSuccessMessage = "Vehicle saved"
         } catch {
             saveErrorMessage = "Failed to save new vehicle: \(error)"
             print(saveErrorMessage!)
@@ -413,6 +456,7 @@ struct AddVehicleFlowView: View {
     private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil) -> some View {
         Button {
             type = t
+            print("DEBUG: selected type=\(t)")
         } label: {
             VStack(spacing: 6) {
                 if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
