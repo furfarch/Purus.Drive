@@ -4,4 +4,13 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:PlateRecognition.swift">
+   </FileRef>
+   <FileRef
+      location = "group:PlateScannerView.swift">
+   </FileRef>
+   <FileRef
+      location = "group:VehiclesViews.swift">
+   </FileRef>
 </Workspace>

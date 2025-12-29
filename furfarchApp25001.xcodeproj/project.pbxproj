@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */; };
+		A2EA6EAE2F02C9E700AECEAF /* VehiclesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A26AC4AE2EFF4F0100AC99E4 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,8 @@
 		A26AC49C2EFF4F0000AC99E4 /* furfarchApp25001.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = furfarchApp25001.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4AD2EFF4F0100AC99E4 /* furfarchApp25001Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = furfarchApp25001Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4B72EFF4F0100AC99E4 /* furfarchApp25001UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = furfarchApp25001UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPhotoPickerView.swift; sourceTree = "<group>"; };
+		A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehiclesViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -92,6 +99,8 @@
 				A26AC4B02EFF4F0100AC99E4 /* furfarchApp25001Tests */,
 				A26AC4BA2EFF4F0100AC99E4 /* furfarchApp25001UITests */,
 				A26AC49D2EFF4F0000AC99E4 /* Products */,
+				A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */,
+				A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -249,6 +258,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */,
+				A2EA6EAE2F02C9E700AECEAF /* VehiclesViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
