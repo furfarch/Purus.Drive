@@ -12,31 +12,55 @@ enum PlateRecognizer {
     private static let plateRegex = try! NSRegularExpression(pattern: "^[A-Z0-9\\-]{5,8}$", options: [])
 
     static func recognize(from image: UIImage, completion: @escaping (PlateRecognitionResult) -> Void) {
-        guard let cgImage = image.cgImage else {
-            completion(.init(rawCandidates: [], bestMatch: nil))
-            return
-        }
-
-        let request = VNRecognizeTextRequest { req, _ in
+        // Prepare a VNImageRequestHandler using cgImage if available, otherwise fall back to CIImage
+        let request = VNRecognizeTextRequest { req, err in
+            if let err = err {
+                print("DEBUG: VNRecognizeTextRequest error: \(err)")
+            }
             let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
+            print("DEBUG: PlateRecognizer found observations: \(observations.count)")
             let candidates = observations.compactMap { $0.topCandidates(1).first?.string }
+            print("DEBUG: PlateRecognizer raw candidates: \(candidates)")
 
             let normalized = candidates.map { normalizePlateCandidate($0) }
             let best = normalized.first(where: { isPlateLike($0) })
 
-            completion(.init(rawCandidates: normalized, bestMatch: best))
+            DispatchQueue.main.async {
+                completion(.init(rawCandidates: normalized, bestMatch: best))
+            }
         }
 
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
         request.recognitionLanguages = ["en-US"]
 
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        DispatchQueue.global(qos: .userInitiated).async {
-            do { try handler.perform([request]) } catch {
-                completion(.init(rawCandidates: [], bestMatch: nil))
+        // Try cgImage first
+        if let cgImage = image.cgImage {
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do { try handler.perform([request]) } catch {
+                    print("DEBUG: VNImageRequestHandler.perform failed: \(error)")
+                    DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
+                }
             }
+            return
         }
+
+        // Fallback to CIImage
+        if let ci = CIImage(image: image) {
+            let handler = VNImageRequestHandler(ciImage: ci, options: [:])
+            DispatchQueue.global(qos: .userInitiated).async {
+                do { try handler.perform([request]) } catch {
+                    print("DEBUG: VNImageRequestHandler.perform failed (CIImage): \(error)")
+                    DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
+                }
+            }
+            return
+        }
+
+        // Can't create image buffer
+        print("DEBUG: PlateRecognizer cannot create CGImage or CIImage from UIImage")
+        DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
     }
 
     private static func normalizePlateCandidate(_ text: String) -> String {

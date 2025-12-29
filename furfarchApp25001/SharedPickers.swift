@@ -28,14 +28,16 @@ struct CameraPickerUniversal: UIViewControllerRepresentable {
         init(_ parent: CameraPickerUniversal) { self.parent = parent }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            DispatchQueue.main.async { self.parent.completion(nil) }
-            picker.dismiss(animated: true)
+            // Notify parent that the user cancelled — the SwiftUI parent view controls the presentation state.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.parent.completion(nil) }
+            // Do NOT call picker.dismiss here; let SwiftUI control dismissal of the fullScreenCover/sheet.
         }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
             let image = info[.originalImage] as? UIImage
-            DispatchQueue.main.async { self.parent.completion(image) }
-            picker.dismiss(animated: true)
+            // Deliver the image on the main thread after a short delay and let the SwiftUI parent decide when to dismiss the picker UI.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.parent.completion(image) }
+            // Do NOT call picker.dismiss here; SwiftUI will dismiss the presentation when the parent updates its binding.
         }
     }
 }
