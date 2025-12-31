@@ -16,12 +16,8 @@ struct CameraPreviewView: UIViewRepresentable {
 }
 
 struct LivePlateScannerView: View {
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var model = CameraScannerModel()
     private var scanner: CameraScanner
-    @State private var showCameraAlert = false
-    @State private var cameraAlertMessage: String = ""
-    var onPlateRecognized: (String) -> Void = { _ in }
 
     init() {
         let model = CameraScannerModel()
@@ -56,38 +52,10 @@ struct LivePlateScannerView: View {
             }
             .padding(.bottom, 30)
         }
-        .onAppear {
-            let status = AVCaptureDevice.authorizationStatus(for: .video)
-            switch status {
-            case .authorized:
-                scanner.start()
-            case .notDetermined:
-                AVCaptureDevice.requestAccess(for: .video) { granted in
-                    DispatchQueue.main.async {
-                        if granted { scanner.start() }
-                        else {
-                            cameraAlertMessage = "Camera access was denied. Please enable it in Settings to use live scanning."
-                            showCameraAlert = true
-                        }
-                    }
-                }
-            case .denied, .restricted:
-                cameraAlertMessage = "Camera access is not available. Please enable Camera permission in Settings."
-                showCameraAlert = true
-            @unknown default:
-                break
+        .onReceive(model.$latestResult) { new in
+            if let r = new {
+                print("DEBUG: LivePlateScannerView detected result best=\(r.bestMatch ?? "<nil>") candidates=\(r.rawCandidates)")
             }
-        }
-        .onChange(of: model.cameraError) { old, new in
-            if let e = new { cameraAlertMessage = e; showCameraAlert = true }
-        }
-        .onDisappear { scanner.stop() }
-        .alert(isPresented: $showCameraAlert) {
-            Alert(title: Text("Camera Unavailable"), message: Text(cameraAlertMessage), primaryButton: .default(Text("Open Settings")) {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }, secondaryButton: .cancel())
         }
     }
 }
