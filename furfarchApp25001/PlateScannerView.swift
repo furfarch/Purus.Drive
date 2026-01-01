@@ -40,9 +40,12 @@ struct PlateScannerView: View {
             CameraPickerUniversal { image in
                 // Keep the sheet open while processing so the user can see progress and results
                 print("DEBUG: PlateScanner CameraPickerUniversal completion invoked; image=\(image != nil)")
+                // Dismiss the picker immediately; show progress/results in the parent view.
+                DispatchQueue.main.async {
+                    showingCamera = false
+                }
                 guard let image = image else {
                     // user cancelled camera — just close the sheet
-                    DispatchQueue.main.async { showingCamera = false }
                     return
                 }
 
@@ -61,7 +64,7 @@ struct PlateScannerView: View {
 
                         // Do NOT auto-accept the best match. Show it to the user for confirmation.
                         recognizedPlate = result.bestMatch
-                        // keep the sheet dismissed so the parent shows progress/results
+                        // picker already dismissed; parent shows progress/results
                     }
                 }
             }

@@ -56,10 +56,11 @@ struct ChecklistListView: View {
 struct CreateChecklistView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    /// Optional initial vehicle — if provided the checklist will be created for that vehicle's type.
     var initialVehicle: Vehicle? = nil
     var onCreate: (Checklist) -> Void
 
-    @Query(sort: \.Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
+    @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
     @State private var selectedVehicle: Vehicle? = nil
     @State private var title: String = ""
     @State private var useTemplate = true
@@ -72,30 +73,24 @@ struct CreateChecklistView: View {
                 Section("Vehicle") {
                     Picker("Select vehicle", selection: $selectedVehicle) {
                         Text("Choose vehicle").tag(Vehicle?.none)
-                        ForEach(vehicles) { v in Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel).tag(Optional(v)) }
+                        ForEach(vehicles) { v in
+                            Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel).tag(Optional(v))
+                        }
                     }
                 }
             }
 
-            Section("Title") {
-                TextField("Checklist title", text: $title)
-            }
+            Section("Title") { TextField("Checklist title", text: $title) }
 
-            Section {
-                Toggle("Pre-fill from template (if available)", isOn: $useTemplate)
-            }
+            Section { Toggle("Pre-fill from template (if available)", isOn: $useTemplate) }
         }
         .navigationTitle("New Checklist")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
-                    // Determine vehicle/type - require a vehicle
                     let vehicleForType = initialVehicle ?? selectedVehicle
-                    guard let v = vehicleForType else {
-                        // No vehicle selected; do nothing (could show alert)
-                        return
-                    }
+                    guard let v = vehicleForType else { return }
                     let vehicleType = v.type
                     let finalTitle = title.isEmpty ? "\(vehicleType.displayName) checklist" : title
                     let items = useTemplate ? ChecklistTemplates.items(for: vehicleType) : []
@@ -120,7 +115,7 @@ struct ChecklistEditorView: View {
                 HStack {
                     Button(action: {
                         let original = checklist.items[idx]
-                        var updated = original
+                        let updated = original
                         switch updated.state {
                         case .notSelected: updated.state = .selected
                         case .selected: updated.state = .notApplicable
@@ -140,7 +135,7 @@ struct ChecklistEditorView: View {
                     Button(action: {
                         // toggle a simple inline note for now
                         let original = checklist.items[idx]
-                        var updated = original
+                        let updated = original
                         if updated.note == nil { updated.note = "" }
                         else if updated.note == "" { updated.note = "Add details…" }
                         else { updated.note = nil }

@@ -3,37 +3,6 @@ default_platform(:ios)
 platform :ios do
   desc "Build and upload to TestFlight using repo exportOptions plist"
   lane :ci_beta do
-    key_id = ENV['APP_STORE_CONNECT_KEY_ID']
-    issuer_id = ENV['APP_STORE_CONNECT_ISSUER_ID']
-    key_path = ENV['FASTLANE_APPLE_API_KEY_PATH'] || "fastlane/credentials/AuthKey_#{key_id}.p8"
-
-    UI.user_error!("Missing APP_STORE_CONNECT_KEY_ID or APP_STORE_CONNECT_ISSUER_ID") unless key_id && issuer_id
-
-    export_plist = "ci/exportOptions.app-store.plist"
-
-    # Build the archive using Fastlane's build_app which wraps xcodebuild.
-    build_app(
-      project: ENV['PROJECT_PATH'] || 'furfarchApp25001.xcodeproj',
-      scheme: ENV['SCHEME'] || 'furfarchApp25001',
-      export_options: export_plist,
-      configuration: 'Release',
-      clean: true,
-      output_directory: '/tmp'
-    )
-
-    # Find the generated IPA
-    ipa = Dir['/tmp/*.ipa'].first
-    UI.user_error!("IPA not found after build") unless ipa
-
-    # Upload to TestFlight with API key
-    upload_to_testflight(
-      ipa: ipa,
-      api_key: {
-        key_id: key_id,
-        issuer_id: issuer_id,
-        key_filepath: key_path
-      },
-      skip_waiting_for_build_processing: false
-    )
+    UI.message("ci_beta lane has been disabled in this repository to prevent automated uploads to App Store / TestFlight.")
   end
 end

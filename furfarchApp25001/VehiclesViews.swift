@@ -110,8 +110,6 @@ struct VehicleFormView: View {
     @State private var plate: String
     @State private var notes: String
     @State private var trailer: Trailer?
-    @State private var showingDriveLogSheet = false
-    @State private var showingCreateChecklist = false
 
     // photo + scanner state
     @State private var carPhoto: UIImage? = nil
@@ -226,13 +224,9 @@ struct VehicleFormView: View {
 
             if vehicle != nil {
                 Section("Actions") {
-                    Button("Add Drive Log") {
-                        showingDriveLogSheet = true
-                    }
-
-                    Button("Add Checklist") {
-                        showingCreateChecklist = true
-                    }
+                    // Add Drive Log and Checklist will be wired in next increment
+                    NavigationLink("Add Drive Log") { Text("Drive Log Form (coming next)") }
+                    NavigationLink("Add Checklist") { Text("Checklist Form (coming next)") }
                 }
             }
 
@@ -252,26 +246,6 @@ struct VehicleFormView: View {
             Button("OK", role: .cancel) { saveErrorMessage = nil }
         } message: {
             Text(saveErrorMessage ?? "Unknown error")
-        }
-        // Drive log sheet (pre-filled for this vehicle)
-        .sheet(isPresented: $showingDriveLogSheet) {
-            if let v = vehicle {
-                let newLog = DriveLog(vehicle: v)
-                NavigationStack { DriveLogEditorView(log: newLog, isNew: true) }
-            }
-        }
-        // Create checklist sheet (vehicle required)
-        .sheet(isPresented: $showingCreateChecklist) {
-            if let v = vehicle {
-                NavigationStack {
-                    CreateChecklistView(initialVehicle: v) { new in
-                        modelContext.insert(new)
-                        try? modelContext.save()
-                        showingCreateChecklist = false
-                    }
-                    .environment(\.modelContext, modelContext)
-                }
-            }
         }
     }
 
@@ -328,7 +302,11 @@ struct TrailerPickerInline: View {
     @Environment(\.modelContext) private var modelContext
     @Binding var selection: Trailer?
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
-    @State private var showingCreateSheet = false
+    @State private var creating = false
+    @State private var newBrandModel = ""
+    @State private var newColor = ""
+    @State private var newPlate = ""
+    @State private var newNotes = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -342,51 +320,24 @@ struct TrailerPickerInline: View {
             .pickerStyle(.menu)
 
             Button {
-                showingCreateSheet = true
+                creating.toggle()
             } label: {
-                Label("Create New Trailer", systemImage: "plus.circle")
+                Label(creating ? "Cancel New Trailer" : "Create New Trailer", systemImage: creating ? "xmark.circle" : "plus.circle")
             }
-            .sheet(isPresented: $showingCreateSheet) {
-                NavigationStack {
-                    TrailerFormView { t in
-                        modelContext.insert(t)
-                        try? modelContext.save()
-                        selection = t
-                        showingCreateSheet = false
-                    }
-                    .environment(\.modelContext, modelContext)
-                }
-            }
-        }
-    }
-}
 
-struct TrailerFormView: View {
-    @Environment(\.dismiss) private var dismiss
-    var onCreate: (Trailer) -> Void
-
-    @State private var brandModel = ""
-    @State private var color = ""
-    @State private var plate = ""
-    @State private var notes = ""
-
-    var body: some View {
-        Form {
-            Section("Details") {
-                TextField("Brand / Model", text: $brandModel)
-                TextField("Color", text: $color)
-                TextField("Plate", text: $plate)
-                TextField("Notes", text: $notes, axis: .vertical)
-            }
-        }
-        .navigationTitle("New Trailer")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    let t = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: .now)
-                    onCreate(t)
-                    dismiss()
+            if creating {
+                TextField("Brand / Model", text: $newBrandModel)
+                TextField("Color", text: $newColor)
+                TextField("Plate", text: $newPlate)
+                TextField("Notes", text: $newNotes, axis: .vertical)
+                Button {
+                    let t = Trailer(brandModel: newBrandModel, color: newColor, plate: newPlate, notes: newNotes, lastEdited: .now)
+                    modelContext.insert(t)
+                    selection = t
+                    creating = false
+                    newBrandModel = ""; newColor = ""; newPlate = ""; newNotes = ""
+                } label: {
+                    Label("Save Trailer", systemImage: "checkmark.circle")
                 }
             }
         }
@@ -539,5 +490,55 @@ struct AddVehicleFlowView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct TrailerFormView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onCreate: (Trailer) -> Void
+
+    @State private var brandModel = ""
+    @State private var color = ""
+    @State private var plate = ""
+    @State private var notes = ""
+    @State private var showingPlateScanner = false
+
+    var body: some View {
+        Form {
+            Section("Details") {
+                TextField("Brand / Model", text: $brandModel)
+                TextField("Color", text: $color)
+
+                // Plate field with scan button
+                HStack {
+                    TextField("Plate", text: $plate)
+                    Button {
+                        showingPlateScanner = true
+                    } label: {
+                        Image(systemName: "camera.viewfinder")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .sheet(isPresented: $showingPlateScanner) {
+                    PlateScannerView { recognized in
+                        self.plate = recognized
+                        showingPlateScanner = false
+                    }
+                }
+
+                TextField("Notes", text: $notes, axis: .vertical)
+            }
+        }
+        .navigationTitle("New Trailer")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    let t = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: .now)
+                    onCreate(t)
+                    dismiss()
+                }
+            }
+        }
     }
 }
