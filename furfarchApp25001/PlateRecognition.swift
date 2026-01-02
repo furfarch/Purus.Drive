@@ -9,10 +9,9 @@ struct PlateRecognitionResult {
 }
 
 enum PlateRecognizer {
-    // Use a relaxed regex suitable for most European plates (Switzerland, Finland, others):
-    // allow 2–12 characters composed of uppercase letters, digits and dashes. We normalize
-    // candidates before matching (spaces are removed), so this covers common variations.
-    private static let plateRegex = try! NSRegularExpression(pattern: "^[A-Z0-9\\-]{2,12}$", options: [])
+    // Broad EU-style: 2–3 letters + optional 1–2 letters + 1–6 digits, allowing optional hyphen.
+    // We validate after normalization (spaces removed, uppercase).
+    private static let broadRegex = try! NSRegularExpression(pattern: "^[A-Z]{1,4}-?[0-9]{1,7}$|^[A-Z]{1,3}[0-9]{1,7}[A-Z]{0,2}$", options: [])
 
     static func recognize(from image: UIImage, completion: @escaping (PlateRecognitionResult) -> Void) {
         let request = VNRecognizeTextRequest { req, err in
@@ -23,32 +22,41 @@ enum PlateRecognizer {
             print("DEBUG: PlateRecognizer found observations: \(observations.count)")
 
             let candidateTuples: [(string: String, confidence: Float)] = observations.flatMap { obs in
-                obs.topCandidates(3).map { ($0.string, $0.confidence) }
+                obs.topCandidates(5).map { ($0.string, $0.confidence) }
             }
             print("DEBUG: PlateRecognizer raw candidates: \(candidateTuples.map { "\($0.string) (\($0.confidence))" })")
 
-            let normalizedConservative = candidateTuples.map { (s, c) in (normalizePlateCandidate(s, aggressiveMap: false), c) }
-            let normalizedAggressive = candidateTuples.map { (s, c) in (normalizePlateCandidate(s, aggressiveMap: true), c) }
-
-            func bestMatch(from list: [(string: String, confidence: Float)]) -> (String, Float)? {
-                let valid = list.filter { isPlateLike($0.string) }
-                return valid.max(by: { $0.confidence < $1.confidence })
+            // Generate multiple normalized variants per candidate and score them.
+            var scored: [(plate: String, score: Double)] = []
+            for (raw, conf) in candidateTuples {
+                for variant in normalizeVariants(raw) {
+                    let s = scorePlateCandidate(variant, baseConfidence: Double(conf))
+                    scored.append((variant, s))
+                }
             }
 
-            let bestA = bestMatch(from: normalizedConservative)
-            let bestB = bestMatch(from: normalizedAggressive)
-            let best = [bestA, bestB].compactMap { $0 }.max(by: { $0.1 < $1.1 })?.0
+            // Deduplicate by keeping max score per string
+            var bestByString: [String: Double] = [:]
+            for (p, s) in scored {
+                bestByString[p] = max(bestByString[p] ?? -Double.infinity, s)
+            }
 
-            let raw = Array(Set(normalizedConservative.map { $0.0 } + normalizedAggressive.map { $0.0 }))
+            let all = bestByString
+                .sorted(by: { $0.value > $1.value })
+                .map { $0.key }
+
+            let best = bestByString
+                .filter { isPlateLike($0.key) }
+                .max(by: { $0.value < $1.value })?.key
 
             DispatchQueue.main.async {
-                completion(.init(rawCandidates: raw, bestMatch: best))
+                completion(.init(rawCandidates: all, bestMatch: best))
             }
         }
 
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR"]
+        request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR", "it-IT", "nl-NL"]
 
         if let cgImage = image.cgImage {
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -96,25 +104,27 @@ enum PlateRecognizer {
             let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
 
             let candidateTuples: [(string: String, confidence: Float)] = observations.flatMap { obs in
-                obs.topCandidates(3).map { ($0.string, $0.confidence) }
+                obs.topCandidates(5).map { ($0.string, $0.confidence) }
             }
-            let normalizedConservative = candidateTuples.map { (s, c) in (normalizePlateCandidate(s, aggressiveMap: false), c) }
-            let normalizedAggressive = candidateTuples.map { (s, c) in (normalizePlateCandidate(s, aggressiveMap: true), c) }
 
-            func bestMatch(from list: [(string: String, confidence: Float)]) -> (String, Float)? {
-                let valid = list.filter { isPlateLike($0.string) }
-                return valid.max(by: { $0.confidence < $1.confidence })
+            var scored: [(plate: String, score: Double)] = []
+            for (raw, conf) in candidateTuples {
+                for variant in normalizeVariants(raw) {
+                    scored.append((variant, scorePlateCandidate(variant, baseConfidence: Double(conf))))
+                }
             }
-            let bestA = bestMatch(from: normalizedConservative)
-            let bestB = bestMatch(from: normalizedAggressive)
-            let best = [bestA, bestB].compactMap { $0 }.max(by: { $0.1 < $1.1 })?.0
-            let raw = Array(Set(normalizedConservative.map { $0.0 } + normalizedAggressive.map { $0.0 }))
-            DispatchQueue.main.async { completion(.init(rawCandidates: raw, bestMatch: best)) }
+
+            var bestByString: [String: Double] = [:]
+            for (p, s) in scored { bestByString[p] = max(bestByString[p] ?? -Double.infinity, s) }
+
+            let all = bestByString.sorted(by: { $0.value > $1.value }).map { $0.key }
+            let best = bestByString.filter { isPlateLike($0.key) }.max(by: { $0.value < $1.value })?.key
+            DispatchQueue.main.async { completion(.init(rawCandidates: all, bestMatch: best)) }
         }
 
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
-        request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR"]
+        request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR", "it-IT", "nl-NL"]
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
         DispatchQueue.global(qos: .userInitiated).async {
@@ -133,31 +143,97 @@ enum PlateRecognizer {
         recognize(from: pixelBuffer, completion: completion)
     }
 
-    private static func normalizePlateCandidate(_ text: String, aggressiveMap: Bool) -> String {
-        var t = text.uppercased()
-        t = t.replacingOccurrences(of: " ", with: "")
-        t = t.replacingOccurrences(of: "·", with: "")
-        t = t.replacingOccurrences(of: "—", with: "-")
-        t = t.replacingOccurrences(of: "–", with: "-")
+    // MARK: - Normalization & scoring
 
-        if aggressiveMap {
-            t = t.map { ch -> Character in
-                switch ch {
-                case "O": return "0"
-                case "I": return "1"
-                case "S": return "5"
-                case "B": return "8"
-                default:  return ch
-                }
-            }.reduce(into: "", { $0.append($1) })
+    /// Produces multiple variants because different mappings help for different OCR mistakes.
+    private static func normalizeVariants(_ text: String) -> [String] {
+        let upper = text.uppercased()
+
+        // Keep only letters/digits and hyphen, drop spaces and punctuation.
+        let filtered = upper.filter { ch in
+            ch.isNumber || (ch >= "A" && ch <= "Z") || ch == "-"
         }
 
-        return t
+        // Common OCR confusions for plates.
+        // We'll produce two variants: one letter->digit heavy, one digit->letter heavy.
+        let letterToDigit: [Character: Character] = [
+            "O": "0",
+            "I": "1",
+            "L": "1",
+            "S": "5",
+            "B": "8",
+            "Z": "2",
+            "G": "6",
+            "D": "0",
+            "T": "7"
+        ]
+        let digitToLetter: [Character: Character] = [
+            "0": "O",
+            "1": "I",
+            "2": "Z",
+            "5": "S",
+            "6": "G",
+            "8": "B",
+            "7": "T"
+        ]
+
+        func map(_ input: String, table: [Character: Character]) -> String {
+            String(input.map { table[$0] ?? $0 })
+        }
+
+        let v0 = filtered
+        let v1 = map(filtered, table: letterToDigit)
+        let v2 = map(filtered, table: digitToLetter)
+
+        // De-duplicate while preserving order.
+        var seen = Set<String>()
+        var out: [String] = []
+        for v in [v0, v1, v2] {
+            if !v.isEmpty && !seen.contains(v) {
+                seen.insert(v)
+                out.append(v)
+            }
+        }
+        return out
+    }
+
+    /// Scoring prefers realistic plates:
+    /// - must contain digits
+    /// - prefers letter+digit mixture
+    /// - prefers patterns like "BE56789" instead of english words like "EDIT".
+    private static func scorePlateCandidate(_ plate: String, baseConfidence: Double) -> Double {
+        // Base confidence from Vision (0..1). Convert to 0..100 to make penalties easier.
+        var score = baseConfidence * 100.0
+
+        let letters = plate.filter { $0 >= "A" && $0 <= "Z" }.count
+        let digits = plate.filter { $0.isNumber }.count
+
+        // Hard penalties for obviously non-plate candidates
+        if digits == 0 { score -= 80 }               // words like EDIT
+        if letters == 0 { score -= 30 }              // all digits sometimes ok, but less likely for EU
+
+        // Prefer mixed alnum
+        score += Double(min(letters, 4)) * 4.0
+        score += Double(min(digits, 7)) * 5.0
+
+        // Prefer common EU / CH pattern: starts with letters and ends with digits.
+        if plate.first?.isLetter == true && plate.last?.isNumber == true {
+            score += 20
+        }
+
+        // Penalize if it looks like an english word (all letters, short)
+        if digits == 0 && letters >= 3 { score -= 50 }
+
+        // Small penalty for too short/too long
+        if plate.count < 4 { score -= 20 }
+        if plate.count > 10 { score -= 10 }
+
+        return score
     }
 
     private static func isPlateLike(_ text: String) -> Bool {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return plateRegex.firstMatch(in: text, options: [], range: range) != nil
+        return broadRegex.firstMatch(in: text, options: [], range: range) != nil
     }
 
     #if canImport(UIKit)
