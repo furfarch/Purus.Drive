@@ -47,13 +47,28 @@ struct VehiclesListView: View {
                     HStack(spacing: 12) {
                         vehicleIconView(for: v)
                             .frame(width: 28, height: 28)
-                        VStack(alignment: .leading) {
+
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
                                 .font(.headline)
                             Text(v.plate)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+
+                            // New: show linked trailer (subtle/indented)
+                            if let t = v.trailer {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "link")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                    Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.leading, 16)
+                            }
                         }
+
                         Spacer()
                         Text(v.lastEdited, style: .time)
                             .font(.footnote)
@@ -183,9 +198,7 @@ struct VehicleFormView: View {
 
     private var logsForCurrentVehicle: [DriveLog] {
         guard let v = currentVehicle else { return [] }
-        // IMPORTANT: Avoid accessing v.id here.
-        // The TestFlight crash shows SwiftData asserting when reading Vehicle.id from invalid backing data.
-        // Comparing the object reference avoids hitting that persisted property during view updates.
+        // Avoid reading v.id (can crash on device/TestFlight due to SwiftData invalid backing data).
         return allDriveLogs.filter { $0.vehicle === v }
     }
 
@@ -453,15 +466,33 @@ struct VehicleFormView: View {
 struct TrailerPickerInline: View {
     @Environment(\.modelContext) private var modelContext
     @Binding var selection: Trailer?
+
+    // Existing trailers
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
+
+    // Needed to enforce uniqueness: find which trailers are already linked.
+    @Query private var vehicles: [Vehicle]
+
     @State private var showingNewTrailer = false
     @State private var refreshID = UUID() // Force view refresh
+
+    private var trailersAlreadyLinked: Set<UUID> {
+        Set(vehicles.compactMap { $0.trailer?.id })
+    }
+
+    private var availableTrailers: [Trailer] {
+        // Allow selecting unlinked trailers + the currently selected one.
+        trailers.filter { t in
+            if selection?.id == t.id { return true }
+            return !trailersAlreadyLinked.contains(t.id)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Picker("Existing", selection: $selection) {
                 Text("None").tag(Trailer?.none)
-                ForEach(trailers) { t in
+                ForEach(availableTrailers) { t in
                     Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
                         .tag(Trailer?.some(t))
                 }
@@ -486,6 +517,7 @@ struct TrailerPickerInline: View {
                 }
             }
         }
+        .id(refreshID)
     }
 }
 
