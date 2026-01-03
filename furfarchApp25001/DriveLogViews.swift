@@ -83,6 +83,7 @@ struct DriveLogEditorView: View {
 
     @State var log: DriveLog
     var isNew: Bool = false
+    var lockVehicle: Bool = false
 
     @State private var showChecklistRunner = false
 
@@ -93,10 +94,19 @@ struct DriveLogEditorView: View {
     var body: some View {
         Form {
             Section("Vehicle & Date") {
-                Picker("Vehicle", selection: $log.vehicle) {
-                    ForEach(vehicles) { v in
-                        Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
-                            .tag(v as Vehicle?)
+                if lockVehicle {
+                    HStack {
+                        Text("Vehicle")
+                        Spacer()
+                        Text(log.vehicle.brandModel.isEmpty ? log.vehicle.type.displayName : log.vehicle.brandModel)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Picker("Vehicle", selection: $log.vehicle) {
+                        ForEach(vehicles) { v in
+                            Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
+                                .tag(v as Vehicle?)
+                        }
                     }
                 }
                 DatePicker("Date", selection: $log.date, displayedComponents: [.date, .hourAndMinute])
