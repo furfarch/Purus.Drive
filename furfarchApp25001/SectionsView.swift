@@ -9,29 +9,16 @@ struct SectionsView: View {
             VehiclesListView()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    // Leading: About icon (replaces the previous 3-line title view)
                     ToolbarItem(placement: .topBarLeading) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "car")
-                                Text("Vehicles")
-                            }
-                            HStack(spacing: 6) {
-                                Image(systemName: "road.lanes")
-                                Text("Drive Log")
-                            }
-                            HStack(spacing: 6) {
-                                Image(systemName: "checklist")
-                                Text("Checklist")
-                            }
+                        Button { showingAbout = true } label: {
+                            Image(systemName: "info.circle")
                         }
-                        .font(.footnote)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
+                        .accessibilityLabel("About")
                     }
-                    // Trailing: About first, then +
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { showingAbout = true } label: { Image(systemName: "info.circle") }
-                            .accessibilityLabel("About")
+
+                    // Trailing: + only
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button { showingAddVehicle = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add Vehicle")
                     }
