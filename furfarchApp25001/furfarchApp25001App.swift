@@ -16,7 +16,35 @@ import SwiftData
 
 @main
 struct furfarchApp25001App: App {
+    private static let schemaVersionKey = "swiftdata_schema_version"
+    private static let currentSchemaVersion = 2
+
     var sharedModelContainer: ModelContainer = {
+        // If we're changing the schema and don't want to migrate, wipe the local store.
+        let defaults = UserDefaults.standard
+        let previous = defaults.integer(forKey: schemaVersionKey)
+        if previous != currentSchemaVersion {
+            // Silent wipe (Option A): delete default SwiftData store files.
+            let fm = FileManager.default
+            if let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                // SwiftData typically stores under Application Support/default.store
+                // We remove any known store directories that might exist.
+                let candidates = ["default.store", "Model.sqlite", "Model.sqlite-shm", "Model.sqlite-wal"]
+                for name in candidates {
+                    let url = appSupport.appendingPathComponent(name)
+                    if fm.fileExists(atPath: url.path) {
+                        try? fm.removeItem(at: url)
+                    }
+                }
+                // Also remove any SwiftData/CloudKit subfolders if present.
+                let swiftDataDir = appSupport.appendingPathComponent("SwiftData")
+                if fm.fileExists(atPath: swiftDataDir.path) {
+                    try? fm.removeItem(at: swiftDataDir)
+                }
+            }
+            defaults.set(currentSchemaVersion, forKey: schemaVersionKey)
+        }
+
         // Register all @Model types so SwiftData knows about them
         let schema = Schema([
             Item.self,

@@ -86,6 +86,7 @@ struct DriveLogEditorView: View {
     var lockVehicle: Bool = false
 
     @State private var showChecklistRunner = false
+    @State private var createdChecklistToEdit: Checklist? = nil
 
     private var filteredChecklists: [Checklist] {
         allChecklists.filter { $0.vehicleType == log.vehicle.type }
@@ -131,6 +132,22 @@ struct DriveLogEditorView: View {
                         Text(cl.title).tag(cl as Checklist?)
                     }
                 }
+
+                Button {
+                    let df = DateFormatter()
+                    df.dateStyle = .medium
+                    df.timeStyle = .short
+                    let title = df.string(from: .now)
+                    let items = ChecklistTemplates.items(for: log.vehicle.type)
+                    let new = Checklist(vehicleType: log.vehicle.type, title: title, items: items, lastEdited: .now)
+                    context.insert(new)
+                    try? context.save()
+                    log.checklist = new
+                    createdChecklistToEdit = new
+                } label: {
+                    Label("Create Checklist", systemImage: "plus")
+                }
+
                 if let cl = log.checklist {
                     Button {
                         showChecklistRunner = true
@@ -148,6 +165,11 @@ struct DriveLogEditorView: View {
         .sheet(isPresented: $showChecklistRunner) {
             if let cl = log.checklist {
                 ChecklistRunnerView(checklist: cl)
+            }
+        }
+        .sheet(item: $createdChecklistToEdit) { cl in
+            NavigationStack {
+                ChecklistEditorView(checklist: cl)
             }
         }
         .onChange(of: log.vehicle) { _, _ in

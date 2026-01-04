@@ -29,14 +29,16 @@ enum VehicleType: String, Codable, CaseIterable, Identifiable {
 
 enum ChecklistItemState: String, Codable, CaseIterable {
     case notSelected
-    case selected
-    case notApplicable
+    case selected     // OK
+    case notApplicable // NA
+    case notOk        // Not OK
 
     mutating func cycle() {
         switch self {
         case .notSelected: self = .selected
         case .selected: self = .notApplicable
-        case .notApplicable: self = .notSelected
+        case .notApplicable: self = .notOk
+        case .notOk: self = .notSelected
         }
     }
 }
