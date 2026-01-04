@@ -38,8 +38,10 @@ struct VehiclesListView: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image("TRAILER_CAR")
+                            .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
+                            .foregroundStyle(.primary)
                             .frame(width: 28, height: 28)
                             .padding(4)
                             .background(Color(.tertiarySystemBackground).opacity(0.85))
@@ -117,8 +119,10 @@ struct VehiclesListView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Image("TRAILER_CAR")
+                                .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
+                                .foregroundStyle(.primary)
                                 .frame(width: 22, height: 22)
                                 .padding(4)
                                 .background(Color(.tertiarySystemBackground).opacity(0.85))
@@ -152,43 +156,62 @@ extension VehiclesListView {
     fileprivate func vehicleIconView(for v: Vehicle) -> some View {
         // choose base image (either system or asset)
         let base: Image
+        let needsTemplateTint: Bool
         switch v.type {
         case .car:
             base = Image(systemName: "car")
+            needsTemplateTint = false
         case .van:
             base = Image("VAN")
+            needsTemplateTint = true
         case .truck:
             base = Image(systemName: "truck.box")
+            needsTemplateTint = false
         case .trailer:
             base = Image("TRAILER_CAR")
+            needsTemplateTint = true
         case .camper:
             base = Image("CAMPER")
+            needsTemplateTint = true
         case .boat:
             base = Image(systemName: "sailboat")
+            needsTemplateTint = false
         case .motorbike:
-            // prefer asset if present, else fallback to bicycle symbol
+            // prefer asset if present
             base = Image("MOTORBIKE")
+            needsTemplateTint = true
         case .other:
             base = Image(systemName: "questionmark.circle")
+            needsTemplateTint = false
         }
 
         return GeometryReader { geo in
             ZStack {
-                // subtle rounded rect background to improve contrast in dark mode for asset images
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color(.tertiarySystemBackground))
                     .opacity(0.85)
-                base
-                    .resizable()
-                    .scaledToFit()
-                    .padding(4)
-                    .foregroundStyle(.primary)
 
-                if v.trailer != nil {
-                    // overlay a small trailer icon at bottom-right
-                    Image("TRAILER_CAR")
+                if needsTemplateTint {
+                    base
+                        .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
+                        .padding(4)
+                        .foregroundStyle(.primary)
+                } else {
+                    base
+                        .resizable()
+                        .scaledToFit()
+                        .padding(4)
+                        .foregroundStyle(.primary)
+                }
+
+                if v.trailer != nil {
+                    Image("TRAILER_CAR")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(.primary)
                         .frame(width: geo.size.width * 0.45, height: geo.size.height * 0.45)
                         .offset(x: geo.size.width * 0.22, y: geo.size.height * 0.22)
                 }
