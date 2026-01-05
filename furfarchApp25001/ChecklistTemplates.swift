@@ -185,7 +185,7 @@ enum ChecklistTemplates {
             "Scheibenwaschanlage",
         ])
         // KONTROLLEN SEITE
-        items += section("KONTROLLEN SEITE", ["REIFEN"]) 
+        items += section("KONTROLLEN SEITE", ["REIFEN"])
         items += subsection("KONTROLLEN SEITE", "REIFEN", [
             "Felgen / Radschüsseln",
             "Reifenzustand (Schäden)",
@@ -193,7 +193,7 @@ enum ChecklistTemplates {
             "Luftdruck",
         ])
         // HINTEN/ LADERAUM
-        items += section("HINTEN/ LADERAUM", ["BELEUCHTUNG"]) 
+        items += section("HINTEN/ LADERAUM", ["BELEUCHTUNG"])
         items += subsection("HINTEN/ LADERAUM", "BELEUCHTUNG", [
             "Schlussleuchten",
             "Bremsleuchten",
@@ -222,7 +222,7 @@ enum ChecklistTemplates {
     private static func trailer() -> [ChecklistItem] {
         var items: [ChecklistItem] = []
         // KONTROLLEN SEITE
-        items += section("KONTROLLEN SEITE", ["BELEUCHTUNG"]) 
+        items += section("KONTROLLEN SEITE", ["BELEUCHTUNG"])
         items += subsection("KONTROLLEN SEITE", "BELEUCHTUNG", [
             "Seitliche Rückstrahler",
             "Umrissleuchten",
@@ -239,7 +239,7 @@ enum ChecklistTemplates {
             "Luftdruck",
         ])
         // HINTEN/ LADERAUM
-        items += section("HINTEN/ LADERAUM", ["BELEUCHTUNG LADUNG/ SICHERUNG"]) 
+        items += section("HINTEN/ LADERAUM", ["BELEUCHTUNG LADUNG/ SICHERUNG"])
         items += subsection("HINTEN/ LADERAUM", "BELEUCHTUNG LADUNG/ SICHERUNG", [
             "Schlussleuchten",
             "Bremsleuchten",
@@ -270,17 +270,247 @@ enum ChecklistTemplates {
         return items
     }
 
+    static func sectionOrder(for type: VehicleType) -> [String] {
+        switch type {
+        case .truck:
+            return [
+                "FRONT UND MOTORRAUM",
+                "KONTROLLEN SEITE",
+                "HINTEN/ LADERAUM",
+                "AUSRÜSTUNG",
+                "FAHRERKABINE",
+                "KONTROLLGERÄT",
+                "LADUNG",
+                "Dokumente",
+                "Abmessungen und Gewicht",
+            ]
+        case .car, .van:
+            return [
+                "FRONT UND MOTORRAUM",
+                "AUSSENEQUIPMENT",
+                "KONTROLLEN SEITE",
+                "HINTEN/ LADERAUM",
+                "AUSRÜSTUNG",
+                "Dokumente",
+                "Abmessungen und Gewicht",
+            ]
+        case .trailer:
+            return [
+                "KONTROLLEN SEITE",
+                "AUSSENEQUIPMENT",
+                "REIFEN",
+                "HINTEN/ LADERAUM",
+                "AUSSENEQUIPMENT (HINTEN)",
+                "LADERAUM",
+                "LADUNG",
+                "Dokumente",
+                "Abmessungen und Gewicht",
+            ]
+        default:
+            return []
+        }
+    }
+
+    static func subsectionOrderBySection(for type: VehicleType) -> [String: [String]] {
+        switch type {
+        case .truck:
+            return [
+                "FRONT UND MOTORRAUM": [
+                    "BELEUCHTUNG",
+                    "Abblendlicht",
+                    "Fernlicht",
+                    "Blinker",
+                    "Warnblinkanlage",
+                    "Nebelscheinwerfer",
+                    "Kennzeichenbeleuchtung",
+                    "Umrissleuchten",
+                    "AUSSENEQUIPMENT",
+                    "Aussenspiegel",
+                    "Kennzeichen (sauber!)",
+                    "Windschutzscheibe",
+                    "Scheibenwaschanlage",
+                    "MOTORRAUM",
+                    "Motorhaube/ Motorraum",
+                    "Kühlflüssigkeit",
+                    "Ölstand Motor/ Augenfälliger",
+                    "Öl- oder Kraftstoffverlust",
+                    "Bremsflüssigkeit",
+                ],
+                "KONTROLLEN SEITE": [
+                    "BELEUCHTUNG",
+                    "Seitliche Rückstrahler",
+                    "Umrissleuchten",
+                    "REIFEN",
+                    "Felgen / Radschüsseln",
+                    "Reifenzustand (Schäden)",
+                    "Profil",
+                    "Luftdruck",
+                    "AUSSENEQUIPMENT",
+                    "Luftfilter",
+                    "Tank",
+                    "Anschlüsse/ Batterie",
+                    "Bordverschlüsse/ Plane",
+                    "Sattelkupplung",
+                ],
+                "HINTEN/ LADERAUM": [
+                    "BELEUCHTUNG LADUNG/ SICHERUNG",
+                    "Schlussleuchten",
+                    "Bremsleuchten",
+                    "Rückstrahler",
+                    "Kennzeichenbeleuchtung",
+                    "Nebelschlussleuchte",
+                    "AUSSENEQUIPMENT",
+                    "Kennzeichen",
+                    "LADERAUM",
+                    "Ladungssicherung gewährleistet",
+                    "Ausreichend Spanngurte/ Ketten vorhanden",
+                    "Zurrmittel/ Antirutschmatten",
+                    "Befestigung und Sicherung von Wechselaufbauten,Behältern und Containern",
+                ],
+                "AUSRÜSTUNG": [
+                    "Verbandskasten",
+                    "Warndreieck",
+                    "Warnweste (griffbereit, DIN-Norm)",
+                    "Fuerlöscher (falls vorgeschrieben/nötig)",
+                ],
+                "FAHRERKABINE": [
+                    "Kontrolleuchten",
+                    "Lenkspiel",
+                    "Kraftstoffvorrat",
+                    "Signalhorn",
+                    "Druckmanometer",
+                    "Bremstest",
+                    "Rückspiegel",
+                    "Sitz-/Pedalprüfung",
+                    "Warnleuchte, Heizung",
+                    "Bedienelemente",
+                ],
+                "KONTROLLGERÄT": [
+                    "Ordnungsgemäße Funktion des Kontrollgerätes gewährleistet",
+                    "Plombierung in Ordnung",
+                    "Leuchtet die Funktionskontrollleuchte",
+                    "Ausreichende Anzahl von Ersatzrollen bei Verwendung eines",
+                    "digitalen Kontrollgerätes",
+                    "Ausreichende Anzahl der richtigen Schaublätter dabei",
+                    "Tätigkeitsnachweise der vorausgegangen 28 Kalendertage",
+                ],
+                "LADUNG": [
+                    "LADUNG",
+                    "Ladung gesichert",
+                ],
+                "Dokumente": [
+                    "Dokumente",
+                    "Führerschein (gültig)",
+                    "Fahrzeugpapiere",
+                    "Zulassungsbescheinigung",
+                    "Frachtpapiere (CMR, Lieferschein, Rechnung)",
+                    "Ladungspapiere",
+                ],
+            ]
+        case .car, .van:
+            return [
+                "FRONT UND MOTORRAUM": [
+                    "BELEUCHTUNG",
+                    "Abblendlicht",
+                    "Fernlicht",
+                    "Blinker",
+                    "Warnblinkanlage",
+                    "Nebelscheinwerfer",
+                    "Kennzeichenbeleuchtung",
+                ],
+                "AUSSENEQUIPMENT": [
+                    "AUSSENEQUIPMENT",
+                    "Aussenspiegel",
+                    "Kennzeichen (sauber!)",
+                    "Windschutzscheibe",
+                    "Scheibenwaschanlage",
+                ],
+                "KONTROLLEN SEITE": [
+                    "REIFEN",
+                    "Felgen / Radschüsseln",
+                    "Reifenzustand (Schäden)",
+                    "Profil",
+                    "Luftdruck",
+                ],
+                "HINTEN/ LADERAUM": [
+                    "BELEUCHTUNG",
+                    "Schlussleuchten",
+                    "Bremsleuchten",
+                    "Rückstrahler",
+                    "Kennzeichenbeleuchtung",
+                    "Nebelschlussleuchte",
+                ],
+                "AUSRÜSTUNG": [
+                    "AUSRÜSTUNG",
+                    "Verbandskasten",
+                    "Warndreieck",
+                    "Warnweste (griffbereit, DIN-Norm)",
+                    "Fuerlöscher (falls vorgeschrieben/nötig)",
+                ],
+                "Dokumente": [
+                    "Dokumente",
+                    "Führerschein (gültig)",
+                    "Fahrzeugpapiere",
+                    "Zulassungsbescheinigung",
+                    "Ladungspapiere",
+                ],
+            ]
+        case .trailer:
+            return [
+                "KONTROLLEN SEITE": [
+                    "BELEUCHTUNG",
+                    "Seitliche Rückstrahler",
+                    "Umrissleuchten",
+                ],
+                "AUSSENEQUIPMENT": [
+                    "AUSSENEQUIPMENT",
+                    "Kupplung",
+                ],
+                "REIFEN": [
+                    "REIFEN",
+                    "Felgen / Radschüsseln",
+                    "Reifenzustand (Schäden)",
+                    "Profil",
+                    "Luftdruck",
+                ],
+                "HINTEN/ LADERAUM": [
+                    "BELEUCHTUNG LADUNG/ SICHERUNG",
+                    "Schlussleuchten",
+                    "Bremsleuchten",
+                    "Rückstrahler",
+                    "Kennzeichenbeleuchtung",
+                    "Nebelschlussleuchte",
+                ],
+                "AUSSENEQUIPMENT (HINTEN)": [
+                    "AUSSENEQUIPMENT (HINTEN)",
+                    "Kennzeichen",
+                ],
+                "LADERAUM": [
+                    "LADERAUM",
+                    "Ladungssicherung gewährleistet",
+                    "Ausreichend Spanngurte/ Ketten vorhanden",
+                    "Zurrmittel/ Antirutschmatten",
+                    "Befestigung und Sicherung von Wechselaufbauten,Behältern und Containern",
+                ],
+                "LADUNG": [
+                    "LADUNG",
+                    "Ladung gesichert",
+                ],
+                "Dokumente": [
+                    "Dokumente",
+                    "Fahrzeugpapiere",
+                ],
+            ]
+        default:
+            return [:]
+        }
+    }
+
     // Helpers to create items for sections and subsections
     private static func section(_ name: String, _ subsections: [String]) -> [ChecklistItem] {
-        var result: [ChecklistItem] = []
-        // Represent the section header as a non-interactive item (state remains notSelected by default)
-        let header = ChecklistItem(section: name, title: name, state: .notSelected)
-        result.append(header)
-        for s in subsections {
-            let subHeader = ChecklistItem(section: name, title: s, state: .notSelected)
-            result.append(subHeader)
-        }
-        return result
+        // Do not create placeholder items for headers/subheaders.
+        // Section/subsection presentation is handled in the UI.
+        return []
     }
 
     private static func subsection(_ section: String, _ name: String, _ titles: [String]) -> [ChecklistItem] {

@@ -199,6 +199,16 @@ struct DriveLogEditorView: View {
 
     private func saveAndClose() {
         log.lastEdited = .now
+
+        let trimmed = log.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "Drive Log" {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = .current
+            df.dateFormat = "yyyy-MM-dd HH:mm"
+            log.reason = "Drive Log \(df.string(from: log.date))"
+        }
+
         // NOTE: New logs are inserted when they are created (e.g. in DriveLogListView.onChange).
         // Inserting again can cause duplicates.
         do { try context.save() } catch { print("ERROR: failed saving drive log: \(error)") }
@@ -271,17 +281,13 @@ private struct ChecklistRunnerItemRow: View {
                 Text(item.title)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button {
-                    if item.note == nil { item.note = "" }
-                    else if item.note == "" { item.note = "Add details…" }
-                    else { item.note = nil }
-                } label: {
-                    Image(systemName: "ellipsis")
+                if let note = item.note, !note.isEmpty {
+                    Image(systemName: "note.text")
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
             }
 
-            if let note = item.note {
+            if let note = item.note, !note.isEmpty {
                 Text(note)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
