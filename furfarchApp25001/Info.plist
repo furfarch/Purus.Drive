@@ -2,13 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDisplayName</key>
-    <string>furfarchApp25001</string>
-    <key>NSCameraUsageDescription</key>
-    <string>This app needs access to the camera to take vehicle photos and scan license plates.</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs access to your photo library to choose vehicle photos.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>This app may save photos of vehicles to your photo library.</string>
+	<key>CFBundleDisplayName</key>
+	<string>MyVehicleLog</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to the camera to take vehicle photos and scan license plates.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app may save photos of vehicles to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to choose vehicle photos.</string>
 </dict>
 </plist>
