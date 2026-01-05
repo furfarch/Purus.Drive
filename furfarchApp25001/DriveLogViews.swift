@@ -89,7 +89,7 @@ struct DriveLogEditorView: View {
     @State private var createdChecklistToEdit: Checklist? = nil
 
     private var filteredChecklists: [Checklist] {
-        allChecklists.filter { $0.vehicle === log.vehicle }
+        allChecklists.filter { $0.vehicleType == log.vehicle.type }
     }
 
     var body: some View {
@@ -139,7 +139,7 @@ struct DriveLogEditorView: View {
                     df.timeStyle = .short
                     let title = df.string(from: .now)
                     let items = ChecklistTemplates.items(for: log.vehicle.type)
-                    let new = Checklist(vehicleType: log.vehicle.type, title: title, items: items, lastEdited: .now, vehicle: log.vehicle)
+                    let new = Checklist(vehicleType: log.vehicle.type, title: title, items: items, lastEdited: .now)
                     context.insert(new)
                     try? context.save()
                     log.checklist = new
@@ -222,7 +222,7 @@ struct ChecklistRunnerView: View {
                 ForEach(sectionedItems.keys.sorted(), id: \.self) { section in
                     Section(section) {
                         ForEach(items(in: section)) { item in
-                            ChecklistItemRow(item: binding(for: item))
+                            ChecklistRunnerItemRow(item: binding(for: item))
                         }
                     }
                 }
@@ -252,6 +252,50 @@ struct ChecklistRunnerView: View {
                 checklist.items[idx] = updated
             }
         })
+    }
+}
+
+private struct ChecklistRunnerItemRow: View {
+    @Binding var item: ChecklistItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Button {
+                    item.state.cycle()
+                } label: {
+                    Image(systemName: symbolName(for: item.state))
+                }
+                .buttonStyle(.plain)
+
+                Text(item.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    if item.note == nil { item.note = "" }
+                    else if item.note == "" { item.note = "Add details…" }
+                    else { item.note = nil }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let note = item.note {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func symbolName(for state: ChecklistItemState) -> String {
+        switch state {
+        case .notSelected: return "circle"
+        case .selected: return "checkmark.circle.fill"
+        case .notApplicable: return "minus.circle"
+        case .notOk: return "xmark.octagon.fill"
+        }
     }
 }
 

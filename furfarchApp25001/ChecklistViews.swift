@@ -11,27 +11,13 @@ struct ChecklistListView: View {
     var body: some View {
         List {
             if checklists.isEmpty {
-                ContentUnavailableView("No checklists", systemImage: "checklist", description: Text("Tap + to create a checklist."))
+                ContentUnavailableView("No checklists", systemImage: "checklist", description: Text("Tap + to create a checklist from a template or blank."))
             } else {
                 ForEach(checklists) { cl in
                     NavigationLink(destination: ChecklistEditorView(checklist: cl)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(cl.title)
-                                .font(.headline)
-
-                            if let v = cl.vehicle {
-                                Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else if let t = cl.trailer {
-                                Text(t.brandModel.isEmpty ? "Trailer" : t.brandModel)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text("Unassigned • \(cl.vehicleType.displayName)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                        VStack(alignment: .leading) {
+                            Text(cl.title).font(.headline)
+                            Text(cl.vehicleType.displayName).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -139,45 +125,52 @@ struct ChecklistEditorView: View {
 
     @Query(sort: \DriveLog.date, order: .reverse) private var allDriveLogs: [DriveLog]
 
+    @State private var selectedSectionIndex: Int = 0
+
+    private var sections: [String] {
+        let keys = Set(checklist.items.map { $0.section })
+        return keys.sorted()
+    }
+
+    private func items(in section: String) -> [ChecklistItem] {
+        checklist.items.filter { $0.section == section }
+    }
+
+    private func binding(for item: ChecklistItem) -> Binding<ChecklistItem> {
+        Binding(get: {
+            checklist.items.first(where: { $0.id == item.id }) ?? item
+        }, set: { updated in
+            if let idx = checklist.items.firstIndex(where: { $0.id == item.id }) {
+                checklist.items[idx] = updated
+            }
+        })
+    }
+
     var body: some View {
-        List {
-            ForEach(Array(checklist.items.enumerated()), id: \.element.id) { idx, _ in
-                HStack {
-                    Button(action: {
-                        let original = checklist.items[idx]
-                        var updated = original
-                        switch updated.state {
-                        case .notSelected: updated.state = .selected
-                        case .selected: updated.state = .notApplicable
-                        case .notApplicable: updated.state = .notOk
-                        case .notOk: updated.state = .notSelected
-                        }
-                        checklist.items[idx] = updated
-                        checklist.lastEdited = .now
-                        do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
-                    }) {
-                        Image(systemName: checklist.items[idx].state == .selected ? "checkmark.circle.fill" : (checklist.items[idx].state == .notApplicable ? "minus.circle" : "circle"))
+        VStack(spacing: 0) {
+            if sections.isEmpty {
+                ContentUnavailableView("No items", systemImage: "checklist", description: Text("This checklist has no items."))
+            } else {
+                TabView(selection: $selectedSectionIndex) {
+                    ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                        ChecklistSectionCard(
+                            title: section,
+                            items: items(in: section),
+                            bindingFor: binding(for:),
+                            onChange: {
+                                checklist.lastEdited = .now
+                                do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
+                            }
+                        )
+                        .padding(.horizontal)
+                        .tag(index)
                     }
-                    VStack(alignment: .leading) {
-                        Text(checklist.items[idx].title)
-                        if let note = checklist.items[idx].note { Text(note).font(.footnote).foregroundStyle(.secondary) }
-                    }
-                    Spacer()
-                    Button(action: {
-                        // toggle a simple inline note for now
-                        let original = checklist.items[idx]
-                        var updated = original
-                        if updated.note == nil { updated.note = "" }
-                        else if updated.note == "" { updated.note = "Add details…" }
-                        else { updated.note = nil }
-                        checklist.items[idx] = updated
-                        checklist.lastEdited = .now
-                        do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
-                    }) { Image(systemName: "ellipsis") }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
             }
         }
         .navigationTitle(checklist.title)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button("Cancel") { dismiss() }
@@ -212,47 +205,88 @@ struct ChecklistEditorView: View {
     }
 }
 
-struct ChecklistItemRow: View {
-    @Binding var item: ChecklistItem
+private struct ChecklistSectionCard: View {
+    let title: String
+    let items: [ChecklistItem]
+    let bindingFor: (ChecklistItem) -> Binding<ChecklistItem>
+    let onChange: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(item.title)
-                Spacer()
-                Menu {
-                    Button("Not selected") { item.state = .notSelected }
-                    Button("Selected") { item.state = .selected }
-                    Button("Not applicable") { item.state = .notApplicable }
-                    Button("Not OK") { item.state = .notOk }
-                } label: {
-                    Label(label(for: item.state), systemImage: icon(for: item.state))
-                        .labelStyle(.titleAndIcon)
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if items.isEmpty {
+                Text("No items in this section")
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(items) { item in
+                            ChecklistCardItemRow(item: bindingFor(item), onChange: onChange)
+                                .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.bottom, 20)
                 }
             }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+private struct ChecklistCardItemRow: View {
+    @Binding var item: ChecklistItem
+    let onChange: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 10) {
+                Button {
+                    item.state.cycle()
+                    onChange()
+                } label: {
+                    Image(systemName: symbolName(for: item.state))
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+
+                Text(item.title)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    // keep existing note toggle behavior
+                    if item.note == nil { item.note = "" }
+                    else if item.note == "" { item.note = "Add details…" }
+                    else { item.note = nil }
+                    onChange()
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .buttonStyle(.plain)
+            }
+
             if let note = item.note {
-                Text(note).font(.footnote).foregroundStyle(.secondary)
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button("Add/Edit note") {
-                // Simple inline toggle note for demo
-                if item.note == nil { item.note = "" }
-                else if item.note == "" { item.note = "Add details…" }
-                else { item.note = nil }
-            }
-            .buttonStyle(.borderless)
         }
     }
 
-    private func label(for state: ChecklistItemState) -> String {
-        switch state {
-        case .notSelected: return "Not selected"
-        case .selected: return "Selected"
-        case .notApplicable: return "Not applicable"
-        case .notOk: return "Not OK"
-        }
-    }
-
-    private func icon(for state: ChecklistItemState) -> String {
+    private func symbolName(for state: ChecklistItemState) -> String {
         switch state {
         case .notSelected: return "circle"
         case .selected: return "checkmark.circle.fill"
