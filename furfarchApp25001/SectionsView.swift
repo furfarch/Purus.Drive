@@ -1,10 +1,12 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SectionsView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var showingAbout = false
+    @State private var showingSettings = false
     @State private var showingAddVehicle = false
 
     @State private var showingExport = false
@@ -13,6 +15,10 @@ struct SectionsView: View {
 
     @State private var shareURL: URL? = nil
     @State private var showingShareSheet = false
+
+    @State private var showingImportPicker = false
+    @State private var importAlertTitle: String? = nil
+    @State private var importAlertMessage: String? = nil
 
     @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
@@ -24,16 +30,22 @@ struct SectionsView: View {
             VehiclesListView()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    // About should be the upper-left item.
-                    ToolbarItem(placement: .topBarLeading) {
+                    // About + Settings should be the upper-left items.
+                    ToolbarItemGroup(placement: .topBarLeading) {
                         Button { showingAbout = true } label: { Image(systemName: "info.circle") }
                             .accessibilityLabel("About")
+
+                        Button { showingSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("Settings")
                     }
 
-                    // Upper-right: only export and +
+                    // Upper-right: only export/import and +
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button { showingExport = true } label: { Image(systemName: "square.and.arrow.up") }
                             .accessibilityLabel("Export")
+
+                        Button { showingImportPicker = true } label: { Image(systemName: "square.and.arrow.down") }
+                            .accessibilityLabel("Import")
 
                         Button { showingAddVehicle = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add Vehicle")
@@ -41,6 +53,9 @@ struct SectionsView: View {
                 }
                 .sheet(isPresented: $showingAbout) {
                     NavigationStack { AboutView().navigationTitle("About") }
+                }
+                .sheet(isPresented: $showingSettings) {
+                    NavigationStack { SettingsView() }
                 }
                 .sheet(isPresented: $showingAddVehicle) {
                     NavigationStack { AddVehicleFlowView() }
@@ -102,7 +117,39 @@ struct SectionsView: View {
                         ShareSheet(items: [url])
                     }
                 }
+                .fileImporter(
+                    isPresented: $showingImportPicker,
+                    allowedContentTypes: [UTType.json],
+                    allowsMultipleSelection: false
+                ) { result in
+                    do {
+                        let url = try result.gettingOneURL()
+                        let data = try Data(contentsOf: url)
+                        let summary = try ImportService.importJSON(data: data, into: modelContext)
+                        importAlertTitle = "Import complete"
+                        importAlertMessage = "Created: \(summary.totalCreated) • Updated: \(summary.totalUpdated)"
+                    } catch {
+                        importAlertTitle = "Import failed"
+                        importAlertMessage = error.localizedDescription
+                    }
+                }
+                .alert(importAlertTitle ?? "", isPresented: Binding(
+                    get: { importAlertTitle != nil },
+                    set: { if !$0 { importAlertTitle = nil; importAlertMessage = nil } }
+                )) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(importAlertMessage ?? "")
+                }
         }
+    }
+}
+
+private extension Result where Success == [URL] {
+    func gettingOneURL() throws -> URL {
+        let urls = try get()
+        if let first = urls.first { return first }
+        throw ImportService.ImportError.unsupportedFormat
     }
 }
 

@@ -54,7 +54,13 @@ final class Vehicle {
     var plate: String
     var notes: String
     var photoData: Data?
-    @Relationship(inverse: \Trailer.linkedVehicle) var trailer: Trailer?
+
+    // Relationship inferred by SwiftData.
+    var trailer: Trailer?
+
+    var checklists: [Checklist] = []
+    var driveLogs: [DriveLog] = []
+
     var lastEdited: Date
 
     init(type: VehicleType, brandModel: String = "", color: String = "", plate: String = "", notes: String = "", trailer: Trailer? = nil, lastEdited: Date = .now, photoData: Data? = nil) {
@@ -78,7 +84,12 @@ final class Trailer {
     var plate: String
     var notes: String
     var photoData: Data?
+
+    // Relationship inferred by SwiftData.
     var linkedVehicle: Vehicle?
+
+    var checklists: [Checklist] = []
+
     var lastEdited: Date
 
     init(brandModel: String = "", color: String = "", plate: String = "", notes: String = "", lastEdited: Date = .now, photoData: Data? = nil) {
@@ -95,16 +106,22 @@ final class Trailer {
 @Model
 final class DriveLog {
     var id: UUID
-    var vehicle: Vehicle
+
+    // CloudKit-safe optional relationship.
+    var vehicle: Vehicle?
+
     var date: Date
     var reason: String
     var kmStart: Int
     var kmEnd: Int
     var notes: String
+
+    // Relationship inferred by SwiftData.
     var checklist: Checklist?
+
     var lastEdited: Date
 
-    init(vehicle: Vehicle, date: Date = .now, reason: String = "", kmStart: Int = 0, kmEnd: Int = 0, notes: String = "", checklist: Checklist? = nil, lastEdited: Date = .now) {
+    init(vehicle: Vehicle?, date: Date = .now, reason: String = "", kmStart: Int = 0, kmEnd: Int = 0, notes: String = "", checklist: Checklist? = nil, lastEdited: Date = .now) {
         self.id = UUID()
         self.vehicle = vehicle
         self.date = date
@@ -122,12 +139,16 @@ final class Checklist {
     var id: UUID
     var vehicleType: VehicleType
     var title: String
-    var items: [ChecklistItem]
-    var lastEdited: Date
 
-    // Optional ownership (newer model). Some screens still fall back to type-only checklists.
+    var items: [ChecklistItem] = []
+
+    // CloudKit-safe optional relationships.
     var vehicle: Vehicle?
     var trailer: Trailer?
+
+    var driveLogs: [DriveLog] = []
+
+    var lastEdited: Date
 
     init(vehicleType: VehicleType,
          title: String,
@@ -153,6 +174,9 @@ final class ChecklistItem {
     var title: String
     var state: ChecklistItemState
     var note: String?
+
+    // Relationship inferred by SwiftData.
+    var checklist: Checklist?
 
     init(section: String, title: String, state: ChecklistItemState = .notSelected, note: String? = nil) {
         self.id = UUID()

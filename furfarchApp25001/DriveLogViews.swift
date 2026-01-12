@@ -18,9 +18,9 @@ struct DriveLogListView: View {
                     NavigationLink(value: log) {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(log.vehicle.brandModel.isEmpty ? log.vehicle.type.displayName : log.vehicle.brandModel)
+                                Text((log.vehicle?.brandModel.isEmpty ?? true) ? (log.vehicle?.type.displayName ?? "Vehicle") : (log.vehicle?.brandModel ?? "Vehicle"))
                                     .font(.headline)
-                                if let plate = log.vehicle.plate.isEmpty ? nil : log.vehicle.plate {
+                                if let plate = (log.vehicle?.plate.isEmpty ?? true) ? nil : log.vehicle?.plate {
                                     Text(plate).foregroundStyle(.secondary)
                                 }
                             }
@@ -90,7 +90,8 @@ struct DriveLogEditorView: View {
     @State private var createdChecklistToEdit: Checklist? = nil
 
     private var filteredChecklists: [Checklist] {
-        allChecklists.filter { $0.vehicleType == log.vehicle.type }
+        guard let vehicleType = log.vehicle?.type else { return [] }
+        return allChecklists.filter { $0.vehicleType == vehicleType }
     }
 
     var body: some View {
@@ -100,7 +101,7 @@ struct DriveLogEditorView: View {
                     HStack {
                         Text("Vehicle")
                         Spacer()
-                        Text(log.vehicle.brandModel.isEmpty ? log.vehicle.type.displayName : log.vehicle.brandModel)
+                        Text((log.vehicle?.brandModel.isEmpty ?? true) ? (log.vehicle?.type.displayName ?? "Vehicle") : (log.vehicle?.brandModel ?? "Vehicle"))
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -135,12 +136,13 @@ struct DriveLogEditorView: View {
                 }
 
                 Button {
+                    guard let vehicleType = log.vehicle?.type else { return }
                     let df = DateFormatter()
                     df.dateStyle = .medium
                     df.timeStyle = .short
                     let title = df.string(from: .now)
-                    let items = ChecklistTemplates.items(for: log.vehicle.type)
-                    let new = Checklist(vehicleType: log.vehicle.type, title: title, items: items, lastEdited: .now)
+                    let items = ChecklistTemplates.items(for: vehicleType)
+                    let new = Checklist(vehicleType: vehicleType, title: title, items: items, lastEdited: .now)
                     context.insert(new)
                     try? context.save()
                     log.checklist = new
@@ -148,6 +150,7 @@ struct DriveLogEditorView: View {
                 } label: {
                     Label("Create Checklist", systemImage: "plus")
                 }
+                .disabled(log.vehicle == nil)
 
                 if let cl = log.checklist {
                     Button {

@@ -26,18 +26,31 @@ struct furfarchApp25001App: App {
             Checklist.self,
             ChecklistItem.self,
         ])
-        
-        // Configure ModelContainer with CloudKit sync
-        let modelConfiguration = ModelConfiguration(
+
+        // Prefer CloudKit sync, but fall back to local-only store if CloudKit init fails.
+        let cloudConfig = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
+            cloudKitDatabase: .private("iCloud.com.furfarch.MyDriverLog")
         )
-        
+
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try ModelContainer(for: schema, configurations: [cloudConfig])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            // CloudKit-backed stores can fail to initialize (e.g. iCloud not available, container mismatch).
+            // Falling back keeps the app usable instead of crashing at launch.
+            print("WARNING: CloudKit ModelContainer init failed. Falling back to local store. Error: \(error)")
+
+            let localConfig = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false
+            )
+
+            do {
+                return try ModelContainer(for: schema, configurations: [localConfig])
+            } catch {
+                fatalError("Could not create ModelContainer: \(error)")
+            }
         }
     }()
 

@@ -49,7 +49,7 @@ enum ExportService {
         func logDTO(_ l: DriveLog) -> ExportPayload.DriveLogDTO {
             .init(
                 id: l.id,
-                vehicleID: l.vehicle.id,
+                vehicleID: l.vehicle?.id ?? UUID(),
                 dateISO8601: iso.string(from: l.date),
                 reason: l.reason,
                 kmStart: l.kmStart,
@@ -134,7 +134,13 @@ enum ExportService {
             if scope == .all || scope == .logs {
                 lines.append("DRIVE LOGS")
                 for l in logs {
-                    lines.append("- \(l.date.formatted(date: .abbreviated, time: .shortened)) • \(l.vehicle.brandModel) \(l.vehicle.plate) • \(l.reason)")
+                    let vehicleText: String
+                    if let v = l.vehicle {
+                        vehicleText = "\(v.brandModel) \(v.plate)"
+                    } else {
+                        vehicleText = "(no vehicle)"
+                    }
+                    lines.append("- \(l.date.formatted(date: .abbreviated, time: .shortened)) • \(vehicleText) • \(l.reason)")
                 }
                 lines.append("")
             }
@@ -176,7 +182,13 @@ enum ExportService {
         if scope == .all || scope == .logs {
             body += "<h2>Drive Logs</h2><ul>"
             for l in logs {
-                body += "<li>\(escape(l.date.formatted(date: .abbreviated, time: .shortened))) • \(escape(l.vehicle.brandModel)) \(escape(l.vehicle.plate)) • \(escape(l.reason))</li>"
+                let vehicleText: String
+                if let v = l.vehicle {
+                    vehicleText = "\(escape(v.brandModel)) \(escape(v.plate))"
+                } else {
+                    vehicleText = "(no vehicle)"
+                }
+                body += "<li>\(escape(l.date.formatted(date: .abbreviated, time: .shortened))) • \(vehicleText) • \(escape(l.reason))</li>"
             }
             body += "</ul>"
         }
