@@ -12,10 +12,10 @@ struct AboutView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
 
-                Text("Personal Vehicle and Drive / Checklist Log")
+                Text("Simply Drive")
                     .font(.headline)
 
-                Text("\(yearMonth) • by furfarch")
+                Text("\(yearMonth) • Personal Vehicle and Drive Log")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 

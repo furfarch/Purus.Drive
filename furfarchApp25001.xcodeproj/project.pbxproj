@@ -16,52 +16,52 @@
 			containerPortal = A26AC4942EFF4F0000AC99E4 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A26AC49B2EFF4F0000AC99E4;
-			remoteInfo = furfarchApp25001;
+			remoteInfo = SimplyDrive;
 		};
 		A26AC4B82EFF4F0100AC99E4 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A26AC4942EFF4F0000AC99E4 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A26AC49B2EFF4F0000AC99E4;
-			remoteInfo = furfarchApp25001;
+			remoteInfo = SimplyDrive;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A26AC49C2EFF4F0000AC99E4 /* furfarchApp25001.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = furfarchApp25001.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A26AC4AD2EFF4F0100AC99E4 /* furfarchApp25001Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = furfarchApp25001Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A26AC4B72EFF4F0100AC99E4 /* furfarchApp25001UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = furfarchApp25001UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A26AC49C2EFF4F0000AC99E4 /* SimplyDrive.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimplyDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A26AC4AD2EFF4F0100AC99E4 /* SimplyDriveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimplyDriveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A26AC4B72EFF4F0100AC99E4 /* SimplyDriveUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimplyDriveUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPhotoPickerView.swift; sourceTree = "<group>"; };
 		A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehiclesViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "furfarchApp25001" folder in "furfarchApp25001" target */ = {
+		A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "SimplyDrive" folder in "SimplyDrive" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = A26AC49B2EFF4F0000AC99E4 /* furfarchApp25001 */;
+			target = A26AC49B2EFF4F0000AC99E4 /* SimplyDrive */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A26AC49E2EFF4F0000AC99E4 /* furfarchApp25001 */ = {
+		A26AC49E2EFF4F0000AC99E4 /* SimplyDrive */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "furfarchApp25001" folder in "furfarchApp25001" target */,
+				A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "SimplyDrive" folder in "SimplyDrive" target */,
 			);
-			path = furfarchApp25001;
+			path = SimplyDrive;
 			sourceTree = "<group>";
 		};
-		A26AC4B02EFF4F0100AC99E4 /* furfarchApp25001Tests */ = {
+		A26AC4B02EFF4F0100AC99E4 /* SimplyDriveTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = furfarchApp25001Tests;
+			path = SimplyDriveTests;
 			sourceTree = "<group>";
 		};
-		A26AC4BA2EFF4F0100AC99E4 /* furfarchApp25001UITests */ = {
+		A26AC4BA2EFF4F0100AC99E4 /* SimplyDriveUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = furfarchApp25001UITests;
+			path = SimplyDriveUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -94,9 +94,9 @@
 		A26AC4932EFF4F0000AC99E4 = {
 			isa = PBXGroup;
 			children = (
-				A26AC49E2EFF4F0000AC99E4 /* furfarchApp25001 */,
-				A26AC4B02EFF4F0100AC99E4 /* furfarchApp25001Tests */,
-				A26AC4BA2EFF4F0100AC99E4 /* furfarchApp25001UITests */,
+				A26AC49E2EFF4F0000AC99E4 /* SimplyDrive */,
+				A26AC4B02EFF4F0100AC99E4 /* SimplyDriveTests */,
+				A26AC4BA2EFF4F0100AC99E4 /* SimplyDriveUITests */,
 				A26AC49D2EFF4F0000AC99E4 /* Products */,
 				A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */,
 				A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */,
@@ -106,9 +106,9 @@
 		A26AC49D2EFF4F0000AC99E4 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A26AC49C2EFF4F0000AC99E4 /* furfarchApp25001.app */,
-				A26AC4AD2EFF4F0100AC99E4 /* furfarchApp25001Tests.xctest */,
-				A26AC4B72EFF4F0100AC99E4 /* furfarchApp25001UITests.xctest */,
+				A26AC49C2EFF4F0000AC99E4 /* SimplyDrive.app */,
+				A26AC4AD2EFF4F0100AC99E4 /* SimplyDriveTests.xctest */,
+				A26AC4B72EFF4F0100AC99E4 /* SimplyDriveUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,9 +116,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A26AC49B2EFF4F0000AC99E4 /* furfarchApp25001 */ = {
+		A26AC49B2EFF4F0000AC99E4 /* SimplyDrive */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A26AC4C02EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001" */;
+			buildConfigurationList = A26AC4C02EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDrive" */;
 			buildPhases = (
 				A26AC4982EFF4F0000AC99E4 /* Sources */,
 				A26AC4992EFF4F0000AC99E4 /* Frameworks */,
@@ -129,18 +129,18 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A26AC49E2EFF4F0000AC99E4 /* furfarchApp25001 */,
+				A26AC49E2EFF4F0000AC99E4 /* SimplyDrive */,
 			);
-			name = furfarchApp25001;
+			name = SimplyDrive;
 			packageProductDependencies = (
 			);
-			productName = furfarchApp25001;
-			productReference = A26AC49C2EFF4F0000AC99E4 /* furfarchApp25001.app */;
+			productName = SimplyDrive;
+			productReference = A26AC49C2EFF4F0000AC99E4 /* SimplyDrive.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A26AC4AC2EFF4F0100AC99E4 /* furfarchApp25001Tests */ = {
+		A26AC4AC2EFF4F0100AC99E4 /* SimplyDriveTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A26AC4C52EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001Tests" */;
+			buildConfigurationList = A26AC4C52EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDriveTests" */;
 			buildPhases = (
 				A26AC4A92EFF4F0100AC99E4 /* Sources */,
 				A26AC4AA2EFF4F0100AC99E4 /* Frameworks */,
@@ -152,18 +152,18 @@
 				A26AC4AF2EFF4F0100AC99E4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A26AC4B02EFF4F0100AC99E4 /* furfarchApp25001Tests */,
+				A26AC4B02EFF4F0100AC99E4 /* SimplyDriveTests */,
 			);
-			name = furfarchApp25001Tests;
+			name = SimplyDriveTests;
 			packageProductDependencies = (
 			);
-			productName = furfarchApp25001Tests;
-			productReference = A26AC4AD2EFF4F0100AC99E4 /* furfarchApp25001Tests.xctest */;
+			productName = SimplyDriveTests;
+			productReference = A26AC4AD2EFF4F0100AC99E4 /* SimplyDriveTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		A26AC4B62EFF4F0100AC99E4 /* furfarchApp25001UITests */ = {
+		A26AC4B62EFF4F0100AC99E4 /* SimplyDriveUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A26AC4C82EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001UITests" */;
+			buildConfigurationList = A26AC4C82EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDriveUITests" */;
 			buildPhases = (
 				A26AC4B32EFF4F0100AC99E4 /* Sources */,
 				A26AC4B42EFF4F0100AC99E4 /* Frameworks */,
@@ -175,13 +175,13 @@
 				A26AC4B92EFF4F0100AC99E4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				A26AC4BA2EFF4F0100AC99E4 /* furfarchApp25001UITests */,
+				A26AC4BA2EFF4F0100AC99E4 /* SimplyDriveUITests */,
 			);
-			name = furfarchApp25001UITests;
+			name = SimplyDriveUITests;
 			packageProductDependencies = (
 			);
-			productName = furfarchApp25001UITests;
-			productReference = A26AC4B72EFF4F0100AC99E4 /* furfarchApp25001UITests.xctest */;
+			productName = SimplyDriveUITests;
+			productReference = A26AC4B72EFF4F0100AC99E4 /* SimplyDriveUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -207,7 +207,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "furfarchApp25001" */;
+			buildConfigurationList = A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "SimplyDrive" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -221,9 +221,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A26AC49B2EFF4F0000AC99E4 /* furfarchApp25001 */,
-				A26AC4AC2EFF4F0100AC99E4 /* furfarchApp25001Tests */,
-				A26AC4B62EFF4F0100AC99E4 /* furfarchApp25001UITests */,
+				A26AC49B2EFF4F0000AC99E4 /* SimplyDrive */,
+				A26AC4AC2EFF4F0100AC99E4 /* SimplyDriveTests */,
+				A26AC4B62EFF4F0100AC99E4 /* SimplyDriveUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -280,12 +280,12 @@
 /* Begin PBXTargetDependency section */
 		A26AC4AF2EFF4F0100AC99E4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A26AC49B2EFF4F0000AC99E4 /* furfarchApp25001 */;
+			target = A26AC49B2EFF4F0000AC99E4 /* SimplyDrive */;
 			targetProxy = A26AC4AE2EFF4F0100AC99E4 /* PBXContainerItemProxy */;
 		};
 		A26AC4B92EFF4F0100AC99E4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A26AC49B2EFF4F0000AC99E4 /* furfarchApp25001 */;
+			target = A26AC49B2EFF4F0000AC99E4 /* SimplyDrive */;
 			targetProxy = A26AC4B82EFF4F0100AC99E4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -298,7 +298,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = furfarchApp25001/furfarchApp25001.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SimplyDrive/SimplyDrive.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -320,7 +320,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = furfarchApp25001/Info.plist;
+				INFOPLIST_FILE = SimplyDrive/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -338,7 +338,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -370,7 +370,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				AUTOMATION_APPLE_EVENTS = NO;
-				CODE_SIGN_ENTITLEMENTS = furfarchApp25001/furfarchApp25001.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SimplyDrive/SimplyDrive.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -392,7 +392,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = furfarchApp25001/Info.plist;
+				INFOPLIST_FILE = SimplyDrive/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -410,7 +410,7 @@
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;
@@ -562,7 +562,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -573,7 +573,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/furfarchApp25001.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/furfarchApp25001";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimplyDrive.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimplyDrive";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -589,7 +589,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001Tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.appTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -600,7 +600,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/furfarchApp25001.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/furfarchApp25001";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimplyDrive.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimplyDrive";
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
@@ -615,7 +615,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001UITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -626,7 +626,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = furfarchApp25001;
+				TEST_TARGET_NAME = SimplyDrive;
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Debug;
@@ -641,7 +641,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = furfarch.furfarchApp25001UITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.simplydrive.appUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -652,7 +652,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = furfarchApp25001;
+				TEST_TARGET_NAME = SimplyDrive;
 				XROS_DEPLOYMENT_TARGET = 26.2;
 			};
 			name = Release;
@@ -660,7 +660,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "furfarchApp25001" */ = {
+		A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "SimplyDrive" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A26AC4C32EFF4F0100AC99E4 /* Debug */,
@@ -669,7 +669,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A26AC4C02EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001" */ = {
+		A26AC4C02EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDrive" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A26AC4C12EFF4F0100AC99E4 /* Debug */,
@@ -678,7 +678,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A26AC4C52EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001Tests" */ = {
+		A26AC4C52EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDriveTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A26AC4C62EFF4F0100AC99E4 /* Debug */,
@@ -687,7 +687,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A26AC4C82EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "furfarchApp25001UITests" */ = {
+		A26AC4C82EFF4F0100AC99E4 /* Build configuration list for PBXNativeTarget "SimplyDriveUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A26AC4C92EFF4F0100AC99E4 /* Debug */,

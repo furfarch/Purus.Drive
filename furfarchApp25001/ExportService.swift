@@ -210,7 +210,7 @@ enum ExportService {
     private static func fileName(scope: ExportScope, ext: String) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyyMMdd_HHmmss"
-        return "furfarch_export_\(scope.rawValue)_\(df.string(from: .now)).\(ext)"
+        return "simplydrive_export_\(scope.rawValue)_\(df.string(from: .now)).\(ext)"
     }
 
     private static func escape(_ s: String) -> String {

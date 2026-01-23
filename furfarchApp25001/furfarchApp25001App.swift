@@ -1,6 +1,6 @@
 //
-//  furfarchApp25001App.swift
-//  furfarchApp25001
+//  SimplyDriveApp.swift
+//  SimplyDrive
 //
 //  Created by Chris Furfari on 27.12.2025.
 //
@@ -8,7 +8,7 @@
 /*
  App Display Name:
  Set in target -> Info (or Info.plist) as CFBundleDisplayName to:
- "Personal Vehicle and Drive / Checklist Log"
+ "Simply Drive"
 */
 
 import SwiftUI
@@ -44,9 +44,9 @@ private struct StorageInitErrorView: View {
 }
 
 @main
-struct furfarchApp25001App: App {
+struct SimplyDriveApp: App {
     private static let storageLocationKey = "storageLocation"
-    private static let cloudContainerId = "iCloud.com.furfarch.MyDriverLog"
+    private static let cloudContainerId = "iCloud.com.simplydrive.app"
     private static let localStoreFileName = "default.store"
     private static let cloudStoreFileName = "cloud.store"
 

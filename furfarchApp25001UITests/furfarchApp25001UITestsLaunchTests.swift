@@ -1,13 +1,13 @@
 //
-//  furfarchApp25001UITestsLaunchTests.swift
-//  furfarchApp25001UITests
+//  SimplyDriveUITestsLaunchTests.swift
+//  SimplyDriveUITests
 //
 //  Created by Chris Furfari on 27.12.2025.
 //
 
 import XCTest
 
-final class furfarchApp25001UITestsLaunchTests: XCTestCase {
+final class SimplyDriveUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

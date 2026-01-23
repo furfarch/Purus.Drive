@@ -22,7 +22,7 @@ final class CloudStatusViewModel: ObservableObject {
     @Published var isICloudAvailable: Bool = false
 
     func refresh() {
-        CKContainer(identifier: "iCloud.com.furfarch.MyDriverLog").accountStatus { [weak self] status, error in
+        CKContainer(identifier: "iCloud.com.simplydrive.app").accountStatus { [weak self] status, error in
             DispatchQueue.main.async {
                 if let error {
                     self?.accountStatusText = "Error: \(error.localizedDescription)"

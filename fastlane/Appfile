@@ -1,2 +1,2 @@
-app_identifier("furfarch.furfarchApp25001") # bundle identifier
+app_identifier("com.simplydrive.app") # bundle identifier
 apple_id("") # your Apple ID (optional)

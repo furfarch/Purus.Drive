@@ -1,13 +1,13 @@
 //
-//  furfarchApp25001UITests.swift
-//  furfarchApp25001UITests
+//  SimplyDriveUITests.swift
+//  SimplyDriveUITests
 //
 //  Created by Chris Furfari on 27.12.2025.
 //
 
 import XCTest
 
-final class furfarchApp25001UITests: XCTestCase {
+final class SimplyDriveUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
