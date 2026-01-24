@@ -46,7 +46,7 @@ private struct StorageInitErrorView: View {
 @main
 struct SimplyDriveApp: App {
     private static let storageLocationKey = "storageLocation"
-    private static let cloudContainerId = "iCloud.com.simplydrive.app"
+    private static let cloudContainerId = "iCloud.com.simply.drive"
     private static let localStoreFileName = "default.store"
     private static let cloudStoreFileName = "cloud.store"
 
