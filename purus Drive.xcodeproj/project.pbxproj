@@ -35,22 +35,9 @@
 		A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehiclesViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "PurusDrive" folder in "PurusDrive" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = A26AC49B2EFF4F0000AC99E4 /* PurusDrive */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A26AC49E2EFF4F0000AC99E4 /* PurusDrive */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A26AC4BF2EFF4F0100AC99E4 /* Exceptions for "PurusDrive" folder in "PurusDrive" target */,
-			);
 			path = PurusDrive;
 			sourceTree = "<group>";
 		};
@@ -207,7 +194,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "PurusDrive" */;
+			buildConfigurationList = A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "purus Drive" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -660,7 +647,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "PurusDrive" */ = {
+		A26AC4972EFF4F0000AC99E4 /* Build configuration list for PBXProject "purus Drive" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A26AC4C32EFF4F0100AC99E4 /* Debug */,
