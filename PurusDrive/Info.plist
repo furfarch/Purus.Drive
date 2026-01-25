@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>MyVehicleLog</string>
+	<string>purus Drive</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs access to the camera to take vehicle photos and scan license plates.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
