@@ -598,27 +598,38 @@ struct VehicleFormView: View {
                 }
                 try modelContext.save()
             } else {
-                // Resolve selected trailer to managed instance for the new vehicle
-                var managedTrailer: Trailer? = nil
-                if let sel = trailer {
-                    let selId = sel.id
-                    if let fetched = try? modelContext.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == selId })).first {
-                        managedTrailer = fetched
-                    } else {
-                        modelContext.insert(sel)
-                        managedTrailer = sel
+                // When type is .trailer, create a Trailer entity instead of a Vehicle
+                // so it can be linked to other vehicles later.
+                if type == .trailer {
+                    let newTrailer = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: now)
+                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+                        newTrailer.photoData = data
                     }
+                    modelContext.insert(newTrailer)
+                    try modelContext.save()
+                } else {
+                    // Resolve selected trailer to managed instance for the new vehicle
+                    var managedTrailer: Trailer? = nil
+                    if let sel = trailer {
+                        let selId = sel.id
+                        if let fetched = try? modelContext.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == selId })).first {
+                            managedTrailer = fetched
+                        } else {
+                            modelContext.insert(sel)
+                            managedTrailer = sel
+                        }
+                    }
+
+                    let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: managedTrailer, lastEdited: now)
+
+                    managedTrailer?.linkedVehicle = new
+
+                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+                        new.photoData = data
+                    }
+                    modelContext.insert(new)
+                    try modelContext.save()
                 }
-
-                let new = Vehicle(type: type, brandModel: brandModel, color: color, plate: plate, notes: notes, trailer: managedTrailer, lastEdited: now)
-
-                managedTrailer?.linkedVehicle = new
-
-                if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                    new.photoData = data
-                }
-                modelContext.insert(new)
-                try modelContext.save()
             }
          
              dismiss()
