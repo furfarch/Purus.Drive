@@ -13,6 +13,7 @@
 
 import SwiftUI
 import SwiftData
+import CloudKit
 
 private struct StorageInitErrorView: View {
     let message: String
@@ -66,6 +67,9 @@ struct PurusDriveApp: App {
         let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
         let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
 
+        print("🔧 [INIT] Storage preference: \(storageRaw), wantsICloud: \(wantsICloud)")
+        print("🔧 [INIT] CloudKit container ID: \(Self.cloudContainerId)")
+
         // Helper to avoid duplicating fallback logic
         func makeLocalContainer() -> ModelContainer? {
             // Explicitly set URL for local storage in application support directory
@@ -74,11 +78,23 @@ struct PurusDriveApp: App {
                 url: URL.applicationSupportDirectory.appending(path: Self.localStoreFileName),
                 cloudKitDatabase: .none
             )
-            if let c = try? ModelContainer(for: schema, configurations: [localConfig]) {
+            do {
+                let c = try ModelContainer(for: schema, configurations: [localConfig])
+                print("✅ [INIT] Local container created successfully")
                 return c
+            } catch {
+                print("❌ [INIT] Local container failed: \(error)")
             }
-            let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            return try? ModelContainer(for: schema, configurations: [inMemoryConfig])
+
+            do {
+                let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                let c = try ModelContainer(for: schema, configurations: [inMemoryConfig])
+                print("⚠️ [INIT] Using in-memory container as fallback")
+                return c
+            } catch {
+                print("❌ [INIT] In-memory container failed: \(error)")
+                return nil
+            }
         }
 
         if wantsICloud {
@@ -87,17 +103,49 @@ struct PurusDriveApp: App {
                 url: URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName),
                 cloudKitDatabase: .private(Self.cloudContainerId)
             )
-            if let c = try? ModelContainer(for: schema, configurations: [cloudConfig]) {
+
+            do {
+                let c = try ModelContainer(for: schema, configurations: [cloudConfig])
                 self.container = c
                 self.initErrorMessage = nil
-            } else if let local = makeLocalContainer() {
-                self.container = local
-                self.initErrorMessage = "iCloud storage was selected but couldn’t be opened. Using local storage instead."
-            } else {
-                self.container = nil
-                self.initErrorMessage = "Could not open iCloud store, local store, or in-memory store."
+                print("✅ [INIT] CloudKit container created successfully")
+                print("🔧 [INIT] Store URL: \(URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName))")
+
+                // Check CloudKit account status
+                CKContainer(identifier: Self.cloudContainerId).accountStatus { status, error in
+                    if let error = error {
+                        print("❌ [CloudKit] Account status error: \(error)")
+                    } else {
+                        switch status {
+                        case .available:
+                            print("✅ [CloudKit] Account status: Available")
+                        case .noAccount:
+                            print("❌ [CloudKit] Account status: No iCloud account signed in")
+                        case .restricted:
+                            print("❌ [CloudKit] Account status: Restricted")
+                        case .couldNotDetermine:
+                            print("❌ [CloudKit] Account status: Could not determine")
+                        case .temporarilyUnavailable:
+                            print("⚠️ [CloudKit] Account status: Temporarily unavailable")
+                        @unknown default:
+                            print("❌ [CloudKit] Account status: Unknown")
+                        }
+                    }
+                }
+            } catch {
+                print("❌ [INIT] CloudKit container FAILED: \(error)")
+                print("❌ [INIT] Error details: \(String(describing: error))")
+
+                if let local = makeLocalContainer() {
+                    self.container = local
+                    self.initErrorMessage = "iCloud storage was selected but couldn't be opened. Using local storage instead. Error: \(error.localizedDescription)"
+                } else {
+                    self.container = nil
+                    self.initErrorMessage = "Could not open iCloud store, local store, or in-memory store."
+                }
             }
         } else {
+            print("🔧 [INIT] Using local storage (user preference)")
             if let local = makeLocalContainer() {
                 self.container = local
                 self.initErrorMessage = nil
