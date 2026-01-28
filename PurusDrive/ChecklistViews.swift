@@ -167,11 +167,10 @@ struct ChecklistEditorView: View {
         Binding(get: {
             (checklist.items ?? []).first(where: { $0.id == item.id }) ?? item
         }, set: { updated in
-            if let idx = (checklist.items ?? []).firstIndex(where: { $0.id == updated.id }) {
-                if checklist.items == nil {
-                    checklist.items = []
-                }
-                checklist.items![idx] = updated
+            guard var items = checklist.items else { return }
+            if let idx = items.firstIndex(where: { $0.id == updated.id }) {
+                items[idx] = updated
+                checklist.items = items
             }
         })
     }

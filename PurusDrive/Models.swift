@@ -160,7 +160,8 @@ final class Checklist {
         self.id = UUID()
         self.vehicleType = vehicleType
         self.title = title
-        self.items = items
+        // Convert empty array to non-nil optional for CloudKit compatibility
+        self.items = items.isEmpty ? [] : items
         self.lastEdited = lastEdited
         self.vehicle = vehicle
         self.trailer = trailer
