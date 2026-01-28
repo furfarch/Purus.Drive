@@ -46,7 +46,7 @@ enum ChecklistItemState: String, Codable, CaseIterable {
 }
 
 @Model
-final class Vehicle {
+final class Vehicle: Hashable {
     var id: UUID
     var type: VehicleType
     var brandModel: String
@@ -74,10 +74,19 @@ final class Vehicle {
         self.trailer = trailer
         self.lastEdited = lastEdited
     }
+
+    // MARK: - Hashable conformance based on id for SwiftUI Picker compatibility
+    static func == (lhs: Vehicle, rhs: Vehicle) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
 @Model
-final class Trailer {
+final class Trailer: Hashable {
     var id: UUID
     var brandModel: String
     var color: String
@@ -100,6 +109,15 @@ final class Trailer {
         self.notes = notes
         self.photoData = photoData
         self.lastEdited = lastEdited
+    }
+
+    // MARK: - Hashable conformance based on id for SwiftUI Picker compatibility
+    static func == (lhs: Trailer, rhs: Trailer) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }
 
