@@ -160,8 +160,8 @@ final class Checklist {
         self.id = UUID()
         self.vehicleType = vehicleType
         self.title = title
-        // Convert empty array to non-nil optional for CloudKit compatibility
-        self.items = items.isEmpty ? [] : items
+        // Store array as-is; SwiftData will handle empty arrays for CloudKit
+        self.items = items
         self.lastEdited = lastEdited
         self.vehicle = vehicle
         self.trailer = trailer
