@@ -48,7 +48,7 @@ enum ChecklistItemState: String, Codable, CaseIterable {
 @Model
 final class Vehicle {
     var id: UUID = UUID()
-    var type: VehicleType = .car
+    var type: VehicleType = VehicleType.car
     var brandModel: String = ""
     var color: String = ""
     var plate: String = ""
@@ -137,7 +137,7 @@ final class DriveLog {
 @Model
 final class Checklist {
     var id: UUID = UUID()
-    var vehicleType: VehicleType = .car
+    var vehicleType: VehicleType = VehicleType.car
     var title: String = ""
 
     var items: [ChecklistItem]?
@@ -173,7 +173,7 @@ final class ChecklistItem {
     var id: UUID = UUID()
     var section: String = ""
     var title: String = ""
-    var state: ChecklistItemState = .notSelected
+    var state: ChecklistItemState = ChecklistItemState.notSelected
     var note: String?
 
     // Relationship inferred by SwiftData.
