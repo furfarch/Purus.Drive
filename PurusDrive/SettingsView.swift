@@ -16,16 +16,31 @@ enum StorageLocation: String, CaseIterable, Identifiable {
     }
 }
 
+// Global diagnostics - set by PurusDriveApp.init()
+enum CloudKitDiagnostics {
+    static var containerCreationResult: String = "Not checked"
+    static var containerError: String? = nil
+    static var storageMode: String = "Unknown"
+    static let containerID = "iCloud.com.purus.driver"
+}
+
 @MainActor
 final class CloudStatusViewModel: ObservableObject {
     @Published var accountStatusText: String = "Checking…"
+    @Published var accountStatusRaw: String = ""
     @Published var isICloudAvailable: Bool = false
+    @Published var userRecordID: String = "Checking..."
+    @Published var privateDBStatus: String = "Checking..."
+
+    private let container = CKContainer(identifier: CloudKitDiagnostics.containerID)
 
     func refresh() {
-        CKContainer(identifier: "iCloud.com.purus.driver").accountStatus { [weak self] status, error in
+        // Check account status
+        container.accountStatus { [weak self] status, error in
             DispatchQueue.main.async {
                 if let error {
                     self?.accountStatusText = "Error: \(error.localizedDescription)"
+                    self?.accountStatusRaw = "error"
                     self?.isICloudAvailable = false
                     return
                 }
@@ -33,22 +48,56 @@ final class CloudStatusViewModel: ObservableObject {
                 switch status {
                 case .available:
                     self?.accountStatusText = "Available"
+                    self?.accountStatusRaw = "available"
                     self?.isICloudAvailable = true
                 case .noAccount:
                     self?.accountStatusText = "No iCloud account"
+                    self?.accountStatusRaw = "noAccount"
                     self?.isICloudAvailable = false
                 case .restricted:
                     self?.accountStatusText = "Restricted"
+                    self?.accountStatusRaw = "restricted"
                     self?.isICloudAvailable = false
                 case .couldNotDetermine:
                     self?.accountStatusText = "Could not determine"
+                    self?.accountStatusRaw = "couldNotDetermine"
                     self?.isICloudAvailable = false
                 case .temporarilyUnavailable:
                     self?.accountStatusText = "Temporarily unavailable"
+                    self?.accountStatusRaw = "temporarilyUnavailable"
                     self?.isICloudAvailable = false
                 @unknown default:
                     self?.accountStatusText = "Unknown"
+                    self?.accountStatusRaw = "unknown"
                     self?.isICloudAvailable = false
+                }
+            }
+        }
+
+        // Fetch user record ID
+        container.fetchUserRecordID { [weak self] recordID, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self?.userRecordID = "Error: \(error.localizedDescription)"
+                } else if let recordID {
+                    self?.userRecordID = recordID.recordName
+                } else {
+                    self?.userRecordID = "None"
+                }
+            }
+        }
+
+        // Test private database access
+        let privateDB = container.privateCloudDatabase
+        privateDB.fetchAllRecordZones { [weak self] zones, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self?.privateDBStatus = "Error: \(error.localizedDescription)"
+                } else if let zones {
+                    let zoneNames = zones.map { $0.zoneID.zoneName }.joined(separator: ", ")
+                    self?.privateDBStatus = zones.isEmpty ? "No zones" : zoneNames
+                } else {
+                    self?.privateDBStatus = "Unknown"
                 }
             }
         }
@@ -147,6 +196,67 @@ struct SettingsView: View {
 
             Section {
                 Button("Close") { dismiss() }
+            }
+
+            // Debug section - shows CloudKit diagnostics
+            Section("CloudKit Diagnostics") {
+                LabeledContent("Storage Mode") {
+                    Text(CloudKitDiagnostics.storageMode)
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Container ID") {
+                    Text(CloudKitDiagnostics.containerID)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Container Init") {
+                    Text(CloudKitDiagnostics.containerCreationResult)
+                        .foregroundStyle(CloudKitDiagnostics.containerError == nil ? .green : .red)
+                }
+
+                if let error = CloudKitDiagnostics.containerError {
+                    Text("Error: \(error)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                LabeledContent("Account Status") {
+                    Text(cloudStatus.accountStatusText)
+                        .foregroundStyle(cloudStatus.isICloudAvailable ? .green : .red)
+                }
+
+                LabeledContent("User Record ID") {
+                    Text(cloudStatus.userRecordID)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                LabeledContent("Private DB Zones") {
+                    Text(cloudStatus.privateDBStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("Refresh Diagnostics") {
+                    cloudStatus.refresh()
+                }
+
+                Button("Copy Diagnostics") {
+                    let diagnostics = """
+                    Storage Mode: \(CloudKitDiagnostics.storageMode)
+                    Container ID: \(CloudKitDiagnostics.containerID)
+                    Container Init: \(CloudKitDiagnostics.containerCreationResult)
+                    Container Error: \(CloudKitDiagnostics.containerError ?? "None")
+                    Account Status: \(cloudStatus.accountStatusText) (\(cloudStatus.accountStatusRaw))
+                    User Record ID: \(cloudStatus.userRecordID)
+                    Private DB Zones: \(cloudStatus.privateDBStatus)
+                    """
+                    UIPasteboard.general.string = diagnostics
+                }
             }
         }
         .navigationTitle("Settings")

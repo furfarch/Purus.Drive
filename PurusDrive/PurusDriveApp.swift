@@ -70,6 +70,9 @@ struct PurusDriveApp: App {
         print("🔧 [INIT] Storage preference: \(storageRaw), wantsICloud: \(wantsICloud)")
         print("🔧 [INIT] CloudKit container ID: \(Self.cloudContainerId)")
 
+        // Set diagnostics for in-app display
+        CloudKitDiagnostics.storageMode = wantsICloud ? "iCloud" : "Local"
+
         // Helper to avoid duplicating fallback logic
         func makeLocalContainer() -> ModelContainer? {
             // Explicitly set URL for local storage in application support directory
@@ -108,6 +111,8 @@ struct PurusDriveApp: App {
                 let c = try ModelContainer(for: schema, configurations: [cloudConfig])
                 self.container = c
                 self.initErrorMessage = nil
+                CloudKitDiagnostics.containerCreationResult = "Success"
+                CloudKitDiagnostics.containerError = nil
                 print("✅ [INIT] CloudKit container created successfully")
                 print("🔧 [INIT] Store URL: \(URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName))")
 
@@ -135,10 +140,13 @@ struct PurusDriveApp: App {
             } catch {
                 print("❌ [INIT] CloudKit container FAILED: \(error)")
                 print("❌ [INIT] Error details: \(String(describing: error))")
+                CloudKitDiagnostics.containerCreationResult = "Failed"
+                CloudKitDiagnostics.containerError = error.localizedDescription
 
                 if let local = makeLocalContainer() {
                     self.container = local
                     self.initErrorMessage = "iCloud storage was selected but couldn't be opened. Using local storage instead. Error: \(error.localizedDescription)"
+                    CloudKitDiagnostics.storageMode = "Local (fallback)"
                 } else {
                     self.container = nil
                     self.initErrorMessage = "Could not open iCloud store, local store, or in-memory store."
