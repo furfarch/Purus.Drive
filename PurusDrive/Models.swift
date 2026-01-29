@@ -58,8 +58,8 @@ final class Vehicle {
     // Relationship inferred by SwiftData.
     var trailer: Trailer?
 
-    var checklists: [Checklist]?
-    var driveLogs: [DriveLog]?
+    var checklists: [Checklist]? = nil
+    var driveLogs: [DriveLog]? = nil
 
     var lastEdited: Date = Date.now
 
@@ -88,7 +88,7 @@ final class Trailer {
     // Relationship inferred by SwiftData.
     var linkedVehicle: Vehicle?
 
-    var checklists: [Checklist]?
+    var checklists: [Checklist]? = nil
 
     var lastEdited: Date = Date.now
 
@@ -140,13 +140,14 @@ final class Checklist {
     var vehicleType: VehicleType = VehicleType.car
     var title: String = ""
 
-    var items: [ChecklistItem]?
+    // Optional array for CloudKit compatibility, but typically initialized with empty/populated array
+    var items: [ChecklistItem]? = nil
 
     // CloudKit-safe optional relationships.
     var vehicle: Vehicle?
     var trailer: Trailer?
 
-    var driveLogs: [DriveLog]?
+    var driveLogs: [DriveLog]? = nil
 
     var lastEdited: Date = Date.now
 
@@ -160,7 +161,7 @@ final class Checklist {
         self.id = UUID()
         self.vehicleType = vehicleType
         self.title = title
-        // Store array as-is; SwiftData will handle empty arrays for CloudKit
+        // Initialize with provided array (empty by default) for convenience
         self.items = items
         self.lastEdited = lastEdited
         self.vehicle = vehicle
