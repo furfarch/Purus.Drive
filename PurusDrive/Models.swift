@@ -58,8 +58,8 @@ final class Vehicle {
     // Relationship inferred by SwiftData.
     var trailer: Trailer?
 
-    var checklists: [Checklist]?
-    var driveLogs: [DriveLog]?
+    var checklists: [Checklist]? = nil
+    var driveLogs: [DriveLog]? = nil
 
     var lastEdited: Date = Date.now
 
@@ -88,7 +88,7 @@ final class Trailer {
     // Relationship inferred by SwiftData.
     var linkedVehicle: Vehicle?
 
-    var checklists: [Checklist]?
+    var checklists: [Checklist]? = nil
 
     var lastEdited: Date = Date.now
 
@@ -140,13 +140,13 @@ final class Checklist {
     var vehicleType: VehicleType = VehicleType.car
     var title: String = ""
 
-    var items: [ChecklistItem]?
+    var items: [ChecklistItem]? = nil
 
     // CloudKit-safe optional relationships.
     var vehicle: Vehicle?
     var trailer: Trailer?
 
-    var driveLogs: [DriveLog]?
+    var driveLogs: [DriveLog]? = nil
 
     var lastEdited: Date = Date.now
 
