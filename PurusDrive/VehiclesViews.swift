@@ -524,7 +524,7 @@ struct VehicleFormView: View {
                 Button {
                     save()
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    Image(systemName: "externaldrive")
                 }
                 .accessibilityLabel("Save")
             }
@@ -565,6 +565,48 @@ struct VehicleFormView: View {
         let now = Date()
         do {
             if let vehicle = editableVehicle {
+                // If type changed to .trailer, convert the Vehicle to a Trailer entity
+                if type == .trailer && vehicle.type != .trailer {
+                    // Create a new Trailer with the vehicle's data
+                    let newTrailer = Trailer(
+                        brandModel: brandModel,
+                        color: color,
+                        plate: plate,
+                        notes: notes,
+                        lastEdited: now
+                    )
+                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
+                        newTrailer.photoData = data
+                    }
+
+                    // Unlink any trailer that was attached to this vehicle
+                    if let previousTrailer = vehicle.trailer {
+                        previousTrailer.linkedVehicle = nil
+                    }
+
+                    // Move checklists from vehicle to the new trailer
+                    if let vehicleChecklists = vehicle.checklists {
+                        for checklist in vehicleChecklists {
+                            checklist.vehicle = nil
+                            checklist.trailer = newTrailer
+                            checklist.vehicleType = .trailer
+                        }
+                    }
+
+                    // Delete associated drive logs (trailers don't have drive logs)
+                    if let driveLogs = vehicle.driveLogs {
+                        for log in driveLogs {
+                            modelContext.delete(log)
+                        }
+                    }
+
+                    modelContext.insert(newTrailer)
+                    modelContext.delete(vehicle)
+                    try modelContext.save()
+                    dismiss()
+                    return
+                }
+
                 // Resolve the selected trailer to a managed instance in this context.
                 var managedTrailer: Trailer? = nil
                 if let sel = trailer {
@@ -863,7 +905,7 @@ private struct NewTrailerFormView: View {
                         dismiss()
                     }
                 } label: {
-                    Image(systemName: "square.and.arrow.down")
+                    Image(systemName: "externaldrive")
                 }
                 .accessibilityLabel("Save")
             }
