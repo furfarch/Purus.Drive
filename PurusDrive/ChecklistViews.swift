@@ -107,7 +107,7 @@ struct CreateChecklistView: View {
                     onCreate(new)
                     dismiss()
                 } label: {
-                    Image(systemName: "externaldrive")
+                    Image(systemName: "sdcard.fill")
                 }
                 .accessibilityLabel("Save")
                 .disabled(preselectedVehicle == nil && selectedVehicle == nil)
@@ -227,7 +227,7 @@ struct ChecklistEditorView: View {
                     do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
                     dismiss()
                 } label: {
-                    Image(systemName: "externaldrive")
+                    Image(systemName: "sdcard.fill")
                 }
                 .accessibilityLabel("Save")
             }
