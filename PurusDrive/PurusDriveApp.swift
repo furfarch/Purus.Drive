@@ -49,25 +49,23 @@ struct PurusDriveApp: App {
     private static let storageLocationKey = "storageLocation"
     private static let cloudContainerId = "iCloud.com.purus.driver"
     private static let localStoreFileName = "default.store"
-    private static let cloudStoreFileName = "cloud.store"
-    private static let appVersionKey = "lastInstalledVersion"
 
     private let container: ModelContainer?
     private let initErrorMessage: String?
 
     init() {
-        // Detect fresh install by checking app version
-        // This works reliably across all platforms including Mac Catalyst
-        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let lastVersion = UserDefaults.standard.string(forKey: Self.appVersionKey)
+        // Check if local store exists
         let localStoreURL = URL.applicationSupportDirectory.appending(path: Self.localStoreFileName)
         let localStoreExists = FileManager.default.fileExists(atPath: localStoreURL.path)
 
-        // Fresh install: no previous version AND no local store file
-        if lastVersion == nil && !localStoreExists {
+        // Get current storage preference
+        let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey)
+
+        // Fresh install detection: If no local store exists, always reset to local storage
+        // This handles iOS-on-Mac where UserDefaults persist after app deletion
+        if !localStoreExists {
             UserDefaults.standard.removeObject(forKey: Self.storageLocationKey)
         }
-        UserDefaults.standard.set(currentVersion, forKey: Self.appVersionKey)
 
         let schema = Schema([
             Vehicle.self,
@@ -77,8 +75,9 @@ struct PurusDriveApp: App {
             ChecklistItem.self,
         ])
 
-        let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
-        let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
+        // Re-read after potential reset
+        let finalStorageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
+        let wantsICloud = (finalStorageRaw == StorageLocation.icloud.rawValue)
 
         // Set diagnostics for in-app display
         CloudKitDiagnostics.storageMode = wantsICloud ? "iCloud" : "Local"
