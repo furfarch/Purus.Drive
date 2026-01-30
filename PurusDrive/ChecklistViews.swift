@@ -225,6 +225,8 @@ struct ChecklistEditorView: View {
                 Button {
                     checklist.lastEdited = .now
                     do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
+                    // Trigger CloudKit sync after save
+                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
                     dismiss()
                 } label: {
                     Image(systemName: "internaldrive.fill")

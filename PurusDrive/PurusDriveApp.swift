@@ -25,7 +25,7 @@ private struct StorageInitErrorView: View {
                     .font(.title2)
                     .bold()
 
-                Text("The app couldn’t start its database.")
+                Text("The app couldn't start its database.")
                     .foregroundStyle(.secondary)
 
                 Text(message)
@@ -49,25 +49,23 @@ struct PurusDriveApp: App {
     private static let storageLocationKey = "storageLocation"
     private static let cloudContainerId = "iCloud.com.purus.driver"
     private static let localStoreFileName = "default.store"
-    private static let cloudStoreFileName = "cloud.store"
-    private static let appVersionKey = "lastInstalledVersion"
 
     private let container: ModelContainer?
     private let initErrorMessage: String?
+    private let cloudSyncService = CloudKitSyncService.shared
+
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Detect fresh install by checking app version
-        // This works reliably across all platforms including Mac Catalyst
-        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        let lastVersion = UserDefaults.standard.string(forKey: Self.appVersionKey)
+        // Check if local store exists
         let localStoreURL = URL.applicationSupportDirectory.appending(path: Self.localStoreFileName)
         let localStoreExists = FileManager.default.fileExists(atPath: localStoreURL.path)
 
-        // Fresh install: no previous version AND no local store file
-        if lastVersion == nil && !localStoreExists {
+        // Fresh install detection: If no local store exists, always reset to local storage
+        // This handles iOS-on-Mac where UserDefaults persist after app deletion
+        if !localStoreExists {
             UserDefaults.standard.removeObject(forKey: Self.storageLocationKey)
         }
-        UserDefaults.standard.set(currentVersion, forKey: Self.appVersionKey)
 
         let schema = Schema([
             Vehicle.self,
@@ -77,105 +75,42 @@ struct PurusDriveApp: App {
             ChecklistItem.self,
         ])
 
-        let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
-        let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
+        // Re-read after potential reset
+        let finalStorageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
+        let wantsICloud = (finalStorageRaw == StorageLocation.icloud.rawValue)
 
         // Set diagnostics for in-app display
         CloudKitDiagnostics.storageMode = wantsICloud ? "iCloud" : "Local"
 
-        // Helper to avoid duplicating fallback logic
-        func makeLocalContainer() -> ModelContainer? {
-            let localConfig = ModelConfiguration(
-                schema: schema,
-                url: localStoreURL,
-                cloudKitDatabase: .none
-            )
-            if let c = try? ModelContainer(for: schema, configurations: [localConfig]) {
-                return c
-            }
+        // Always use local storage - CloudKit sync is handled manually
+        let localConfig = ModelConfiguration(
+            schema: schema,
+            url: localStoreURL,
+            cloudKitDatabase: .none
+        )
+
+        do {
+            let c = try ModelContainer(for: schema, configurations: [localConfig])
+            self.container = c
+            self.initErrorMessage = nil
+            CloudKitDiagnostics.containerCreationResult = "Success"
+            CloudKitDiagnostics.containerError = nil
+
+            // Set up the sync service with the model context
+            cloudSyncService.setModelContext(c.mainContext)
+        } catch {
+            // Fallback to in-memory
             let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            return try? ModelContainer(for: schema, configurations: [inMemoryConfig])
-        }
-
-        // Helper to delete CloudKit store files if corrupted
-        func deleteCloudStoreIfExists() {
-            let cloudStoreURL = URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName)
-            let filesToDelete = [
-                cloudStoreURL,
-                cloudStoreURL.appendingPathExtension("ckassets"),
-                cloudStoreURL.deletingPathExtension().appendingPathExtension("store-shm"),
-                cloudStoreURL.deletingPathExtension().appendingPathExtension("store-wal"),
-            ]
-            for fileURL in filesToDelete {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            // Also try to delete the default SwiftData CloudKit store location
-            if let defaultStoreURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                let defaultCloudStore = defaultStoreURL.appending(path: "default.store")
-                try? FileManager.default.removeItem(at: defaultCloudStore)
-            }
-        }
-
-        if wantsICloud {
-            // Try CloudKit with minimal configuration - no custom URL
-            var lastError: Error?
-
-            do {
-                let cloudConfig = ModelConfiguration(
-                    cloudKitDatabase: .private(Self.cloudContainerId)
-                )
-                let c = try ModelContainer(
-                    for: Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self,
-                    configurations: cloudConfig
-                )
+            if let c = try? ModelContainer(for: schema, configurations: [inMemoryConfig]) {
                 self.container = c
-                self.initErrorMessage = nil
-                CloudKitDiagnostics.containerCreationResult = "Success"
-                CloudKitDiagnostics.containerError = nil
-            } catch {
-                lastError = error
-
-                // Try deleting any cached CloudKit data and retry
-                deleteCloudStoreIfExists()
-
-                do {
-                    let cloudConfig = ModelConfiguration(
-                        cloudKitDatabase: .private(Self.cloudContainerId)
-                    )
-                    let c = try ModelContainer(
-                        for: Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self,
-                        configurations: cloudConfig
-                    )
-                    self.container = c
-                    self.initErrorMessage = nil
-                    CloudKitDiagnostics.containerCreationResult = "Success (retry)"
-                    CloudKitDiagnostics.containerError = nil
-                } catch let retryError {
-                    lastError = retryError
-
-                    // Capture full error details
-                    let errorDescription = String(describing: retryError)
-                    CloudKitDiagnostics.containerCreationResult = "Failed"
-                    CloudKitDiagnostics.containerError = errorDescription
-
-                    if let local = makeLocalContainer() {
-                        self.container = local
-                        self.initErrorMessage = "iCloud error: \(errorDescription)"
-                        CloudKitDiagnostics.storageMode = "Local (fallback)"
-                    } else {
-                        self.container = nil
-                        self.initErrorMessage = "Could not open any storage. Error: \(errorDescription)"
-                    }
-                }
-            }
-        } else {
-            if let local = makeLocalContainer() {
-                self.container = local
-                self.initErrorMessage = nil
+                self.initErrorMessage = "Local storage failed, using in-memory storage."
+                cloudSyncService.setModelContext(c.mainContext)
             } else {
                 self.container = nil
-                self.initErrorMessage = "Could not open local store or in-memory store."
+                self.initErrorMessage = "Could not open any storage. Error: \(error.localizedDescription)"
             }
+            CloudKitDiagnostics.containerCreationResult = "Failed"
+            CloudKitDiagnostics.containerError = error.localizedDescription
         }
 
         if let container {
@@ -188,9 +123,31 @@ struct PurusDriveApp: App {
             if let container {
                 ContentView()
                     .modelContainer(container)
+                    .task {
+                        // Sync on app launch if iCloud is enabled
+                        await syncIfCloudEnabled()
+                    }
+                    .onChange(of: scenePhase) { oldPhase, newPhase in
+                        if newPhase == .active {
+                            // Sync when app becomes active
+                            Task {
+                                await syncIfCloudEnabled()
+                            }
+                        }
+                    }
             } else {
                 StorageInitErrorView(message: initErrorMessage ?? "Unknown error")
             }
+        }
+    }
+
+    @MainActor
+    private func syncIfCloudEnabled() async {
+        let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
+        let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
+
+        if wantsICloud {
+            await cloudSyncService.performFullSync()
         }
     }
 }

@@ -213,6 +213,8 @@ struct DriveLogEditorView: View {
 
         // Reason is a user note; do not overwrite it.
         do { try context.save() } catch { print("ERROR: failed saving drive log: \(error)") }
+        // Trigger CloudKit sync after save
+        Task { await CloudKitSyncService.shared.pushAllToCloud() }
         dismiss()
     }
 

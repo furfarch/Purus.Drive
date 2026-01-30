@@ -673,13 +673,16 @@ struct VehicleFormView: View {
                     try modelContext.save()
                 }
             }
-         
-             dismiss()
-         } catch {
-             saveErrorMessage = "Failed to save vehicle: \(error)"
-             print(saveErrorMessage!)
-         }
-     }
+
+            // Trigger CloudKit sync after save
+            Task { await CloudKitSyncService.shared.pushAllToCloud() }
+
+            dismiss()
+        } catch {
+            saveErrorMessage = "Failed to save vehicle: \(error)"
+            print(saveErrorMessage!)
+        }
+    }
 
     private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil, systemNameFallback: String? = nil) -> some View {
         Button {
@@ -895,6 +898,8 @@ private struct NewTrailerFormView: View {
                             existing.photoData = data
                         }
                         try? modelContext.save()
+                        // Trigger CloudKit sync after save
+                        Task { await CloudKitSyncService.shared.pushAllToCloud() }
                         dismiss()
                     } else {
                         let t = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: .now)
@@ -902,6 +907,8 @@ private struct NewTrailerFormView: View {
                             t.photoData = data
                         }
                         onCreate?(t)
+                        // Trigger CloudKit sync after save
+                        Task { await CloudKitSyncService.shared.pushAllToCloud() }
                         dismiss()
                     }
                 } label: {

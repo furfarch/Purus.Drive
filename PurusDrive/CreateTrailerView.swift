@@ -67,6 +67,8 @@ struct CreateTrailerView: View {
                     // Make the new trailer a managed object so it can be linked to Vehicles
                     modelContext.insert(t)
                     onCreate(t)
+                    // Trigger CloudKit sync after save
+                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
                     dismiss()
                 }) {
                     Image(systemName: "internaldrive.fill")
