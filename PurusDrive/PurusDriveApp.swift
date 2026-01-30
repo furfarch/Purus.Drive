@@ -49,12 +49,21 @@ struct PurusDriveApp: App {
     private static let storageLocationKey = "storageLocation"
     private static let cloudContainerId = "iCloud.com.purus.driver"
     private static let localStoreFileName = "default.store"
-    private static let cloudStoreFileName = "cloud.store"
+    private static let freshInstallMarker = "installed.marker"
 
     private let container: ModelContainer?
     private let initErrorMessage: String?
 
     init() {
+        // Detect fresh install - if marker file doesn't exist, reset storage preference
+        let markerURL = URL.applicationSupportDirectory.appending(path: Self.freshInstallMarker)
+        if !FileManager.default.fileExists(atPath: markerURL.path) {
+            // Fresh install - reset to local storage and create marker
+            UserDefaults.standard.removeObject(forKey: Self.storageLocationKey)
+            try? FileManager.default.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
+            FileManager.default.createFile(atPath: markerURL.path, contents: nil)
+        }
+
         let schema = Schema([
             Vehicle.self,
             Trailer.self,
@@ -84,9 +93,9 @@ struct PurusDriveApp: App {
         }
 
         if wantsICloud {
+            // For CloudKit, don't specify a custom URL - let SwiftData manage the store location
             let cloudConfig = ModelConfiguration(
                 schema: schema,
-                url: URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName),
                 cloudKitDatabase: .private(Self.cloudContainerId)
             )
             do {
