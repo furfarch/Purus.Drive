@@ -49,20 +49,25 @@ struct PurusDriveApp: App {
     private static let storageLocationKey = "storageLocation"
     private static let cloudContainerId = "iCloud.com.purus.driver"
     private static let localStoreFileName = "default.store"
-    private static let freshInstallMarker = "installed.marker"
+    private static let cloudStoreFileName = "cloud.store"
+    private static let appVersionKey = "lastInstalledVersion"
 
     private let container: ModelContainer?
     private let initErrorMessage: String?
 
     init() {
-        // Detect fresh install - if marker file doesn't exist, reset storage preference
-        let markerURL = URL.applicationSupportDirectory.appending(path: Self.freshInstallMarker)
-        if !FileManager.default.fileExists(atPath: markerURL.path) {
-            // Fresh install - reset to local storage and create marker
+        // Detect fresh install by checking app version
+        // This works reliably across all platforms including Mac Catalyst
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let lastVersion = UserDefaults.standard.string(forKey: Self.appVersionKey)
+        let localStoreURL = URL.applicationSupportDirectory.appending(path: Self.localStoreFileName)
+        let localStoreExists = FileManager.default.fileExists(atPath: localStoreURL.path)
+
+        // Fresh install: no previous version AND no local store file
+        if lastVersion == nil && !localStoreExists {
             UserDefaults.standard.removeObject(forKey: Self.storageLocationKey)
-            try? FileManager.default.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: markerURL.path, contents: nil)
         }
+        UserDefaults.standard.set(currentVersion, forKey: Self.appVersionKey)
 
         let schema = Schema([
             Vehicle.self,
@@ -82,7 +87,7 @@ struct PurusDriveApp: App {
         func makeLocalContainer() -> ModelContainer? {
             let localConfig = ModelConfiguration(
                 schema: schema,
-                url: URL.applicationSupportDirectory.appending(path: Self.localStoreFileName),
+                url: localStoreURL,
                 cloudKitDatabase: .none
             )
             if let c = try? ModelContainer(for: schema, configurations: [localConfig]) {
@@ -92,33 +97,66 @@ struct PurusDriveApp: App {
             return try? ModelContainer(for: schema, configurations: [inMemoryConfig])
         }
 
+        // Helper to delete CloudKit store files if corrupted
+        func deleteCloudStoreIfExists() {
+            let cloudStoreURL = URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName)
+            let filesToDelete = [
+                cloudStoreURL,
+                cloudStoreURL.appendingPathExtension("ckassets"),
+                cloudStoreURL.deletingPathExtension().appendingPathExtension("store-shm"),
+                cloudStoreURL.deletingPathExtension().appendingPathExtension("store-wal"),
+            ]
+            for fileURL in filesToDelete {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
+            // Also try to delete the default SwiftData CloudKit store location
+            if let defaultStoreURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+                let defaultCloudStore = defaultStoreURL.appending(path: "default.store")
+                try? FileManager.default.removeItem(at: defaultCloudStore)
+            }
+        }
+
         if wantsICloud {
-            // For CloudKit, use minimal configuration - let SwiftData infer everything
-            do {
+            // Use explicit URL for CloudKit store
+            let cloudStoreURL = URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName)
+
+            func tryCreateCloudContainer() -> ModelContainer? {
                 let cloudConfig = ModelConfiguration(
+                    schema: schema,
+                    url: cloudStoreURL,
                     cloudKitDatabase: .private(Self.cloudContainerId)
                 )
-                let c = try ModelContainer(
-                    for: Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self,
-                    configurations: cloudConfig
-                )
+                return try? ModelContainer(for: schema, configurations: [cloudConfig])
+            }
+
+            // First attempt
+            if let c = tryCreateCloudContainer() {
                 self.container = c
                 self.initErrorMessage = nil
                 CloudKitDiagnostics.containerCreationResult = "Success"
                 CloudKitDiagnostics.containerError = nil
-            } catch {
-                // Capture full error details
-                let fullError = String(describing: error)
-                CloudKitDiagnostics.containerCreationResult = "Failed"
-                CloudKitDiagnostics.containerError = fullError
+            } else {
+                // Delete corrupted store and retry once
+                deleteCloudStoreIfExists()
 
-                if let local = makeLocalContainer() {
-                    self.container = local
-                    self.initErrorMessage = "iCloud error: \(fullError)"
-                    CloudKitDiagnostics.storageMode = "Local (fallback)"
+                if let c = tryCreateCloudContainer() {
+                    self.container = c
+                    self.initErrorMessage = nil
+                    CloudKitDiagnostics.containerCreationResult = "Success (retry)"
+                    CloudKitDiagnostics.containerError = nil
                 } else {
-                    self.container = nil
-                    self.initErrorMessage = "Could not open iCloud store, local store, or in-memory store."
+                    // Still failing - capture error and fallback to local
+                    CloudKitDiagnostics.containerCreationResult = "Failed"
+                    CloudKitDiagnostics.containerError = "loadIssueModelContainer - CloudKit store corrupted"
+
+                    if let local = makeLocalContainer() {
+                        self.container = local
+                        self.initErrorMessage = "iCloud storage failed. Using local storage."
+                        CloudKitDiagnostics.storageMode = "Local (fallback)"
+                    } else {
+                        self.container = nil
+                        self.initErrorMessage = "Could not open any storage."
+                    }
                 }
             }
         } else {
