@@ -117,45 +117,54 @@ struct PurusDriveApp: App {
         }
 
         if wantsICloud {
-            // Use explicit URL for CloudKit store
-            let cloudStoreURL = URL.applicationSupportDirectory.appending(path: Self.cloudStoreFileName)
+            // Try CloudKit with minimal configuration - no custom URL
+            var lastError: Error?
 
-            func tryCreateCloudContainer() -> ModelContainer? {
+            do {
                 let cloudConfig = ModelConfiguration(
-                    schema: schema,
-                    url: cloudStoreURL,
                     cloudKitDatabase: .private(Self.cloudContainerId)
                 )
-                return try? ModelContainer(for: schema, configurations: [cloudConfig])
-            }
-
-            // First attempt
-            if let c = tryCreateCloudContainer() {
+                let c = try ModelContainer(
+                    for: Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self,
+                    configurations: cloudConfig
+                )
                 self.container = c
                 self.initErrorMessage = nil
                 CloudKitDiagnostics.containerCreationResult = "Success"
                 CloudKitDiagnostics.containerError = nil
-            } else {
-                // Delete corrupted store and retry once
+            } catch {
+                lastError = error
+
+                // Try deleting any cached CloudKit data and retry
                 deleteCloudStoreIfExists()
 
-                if let c = tryCreateCloudContainer() {
+                do {
+                    let cloudConfig = ModelConfiguration(
+                        cloudKitDatabase: .private(Self.cloudContainerId)
+                    )
+                    let c = try ModelContainer(
+                        for: Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self,
+                        configurations: cloudConfig
+                    )
                     self.container = c
                     self.initErrorMessage = nil
                     CloudKitDiagnostics.containerCreationResult = "Success (retry)"
                     CloudKitDiagnostics.containerError = nil
-                } else {
-                    // Still failing - capture error and fallback to local
+                } catch let retryError {
+                    lastError = retryError
+
+                    // Capture full error details
+                    let errorDescription = String(describing: retryError)
                     CloudKitDiagnostics.containerCreationResult = "Failed"
-                    CloudKitDiagnostics.containerError = "loadIssueModelContainer - CloudKit store corrupted"
+                    CloudKitDiagnostics.containerError = errorDescription
 
                     if let local = makeLocalContainer() {
                         self.container = local
-                        self.initErrorMessage = "iCloud storage failed. Using local storage."
+                        self.initErrorMessage = "iCloud error: \(errorDescription)"
                         CloudKitDiagnostics.storageMode = "Local (fallback)"
                     } else {
                         self.container = nil
-                        self.initErrorMessage = "Could not open any storage."
+                        self.initErrorMessage = "Could not open any storage. Error: \(errorDescription)"
                     }
                 }
             }
