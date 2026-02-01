@@ -25,6 +25,7 @@ final class CloudKitSyncService {
 
     private var modelContext: ModelContext?
     private let reportStore = SyncReportStore.shared
+    private var lastErrorMessage: String? = nil
 
     private init() {}
 
@@ -46,6 +47,7 @@ final class CloudKitSyncService {
 
         do {
             print("CloudKit: full sync starting")
+            lastErrorMessage = nil
 
             // Ensure zone exists
             try await ensureZoneExists()
@@ -69,6 +71,9 @@ final class CloudKitSyncService {
             print("CloudKitSyncService: Full sync completed")
         } catch {
             print("CloudKitSyncService: Sync error - \(error)")
+            lastErrorMessage = String(describing: error)
+            report.error = lastErrorMessage
+            await MainActor.run { reportStore.lastReport = report }
         }
     }
 
@@ -87,6 +92,7 @@ final class CloudKitSyncService {
             print("CloudKitSyncService: Fetch from cloud completed")
         } catch {
             print("CloudKitSyncService: Fetch error - \(error)")
+            lastErrorMessage = String(describing: error)
         }
     }
 
@@ -104,6 +110,7 @@ final class CloudKitSyncService {
             print("CloudKitSyncService: Push to cloud completed")
         } catch {
             print("CloudKitSyncService: Push error - \(error)")
+            lastErrorMessage = String(describing: error)
         }
     }
 
@@ -130,24 +137,25 @@ final class CloudKitSyncService {
     // MARK: - Zone Management
 
     private func ensureZoneExists() async throws {
-        let zone = CKRecordZone(zoneName: zoneName)
-        let operation = CKModifyRecordZonesOperation(recordZonesToSave: [zone], recordZoneIDsToDelete: nil)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            operation.modifyRecordZonesResultBlock = { result in
+        let targetZoneID = recordZone.zoneID
+        // First check if the zone already exists
+        let zones = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[CKRecordZone], Error>) in
+            privateDatabase.fetchAllRecordZones { zones, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: zones ?? []) }
+            }
+        }
+        if zones.contains(where: { $0.zoneID == targetZoneID }) { return }
+        // Create the zone and wait for success
+        let op = CKModifyRecordZonesOperation(recordZonesToSave: [recordZone], recordZoneIDsToDelete: nil)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            op.modifyRecordZonesResultBlock = { result in
                 switch result {
-                case .success:
-                    continuation.resume()
-                case .failure(let error):
-                    // Zone already exists is not an error
-                    if let ckError = error as? CKError, ckError.code == .serverRejectedRequest {
-                        continuation.resume()
-                    } else {
-                        continuation.resume(throwing: error)
-                    }
+                case .success: continuation.resume()
+                case .failure(let error): continuation.resume(throwing: error)
                 }
             }
-            privateDatabase.add(operation)
+            privateDatabase.add(op)
         }
     }
 
@@ -215,17 +223,22 @@ final class CloudKitSyncService {
                 context.insert(vehicle)
             }
 
-            if let typeString = record["CD_type"] as? String,
-               let type = VehicleType(rawValue: typeString) {
-                vehicle.type = type
-            }
-            vehicle.brandModel = record["CD_brandModel"] as? String ?? ""
-            vehicle.color = record["CD_color"] as? String ?? ""
-            vehicle.plate = record["CD_plate"] as? String ?? ""
-            vehicle.notes = record["CD_notes"] as? String ?? ""
-            vehicle.photoData = record["CD_photoData"] as? Data
-            if let lastEdited = record["CD_lastEdited"] as? Date {
-                vehicle.lastEdited = lastEdited
+            let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
+            if existing != nil && vehicle.lastEdited >= cloudLastEdited {
+                // Skip overwrite; still allow establishing relationships below
+            } else {
+                if let typeString = record["CD_type"] as? String,
+                   let type = VehicleType(rawValue: typeString) {
+                    vehicle.type = type
+                }
+                vehicle.brandModel = record["CD_brandModel"] as? String ?? ""
+                vehicle.color = record["CD_color"] as? String ?? ""
+                vehicle.plate = record["CD_plate"] as? String ?? ""
+                vehicle.notes = record["CD_notes"] as? String ?? ""
+                vehicle.photoData = record["CD_photoData"] as? Data
+                if let lastEdited = record["CD_lastEdited"] as? Date {
+                    vehicle.lastEdited = lastEdited
+                }
             }
 
             // Link to trailer if reference exists (trailers were fetched first)
@@ -296,13 +309,18 @@ final class CloudKitSyncService {
                 context.insert(trailer)
             }
 
-            trailer.brandModel = record["CD_brandModel"] as? String ?? ""
-            trailer.color = record["CD_color"] as? String ?? ""
-            trailer.plate = record["CD_plate"] as? String ?? ""
-            trailer.notes = record["CD_notes"] as? String ?? ""
-            trailer.photoData = record["CD_photoData"] as? Data
-            if let lastEdited = record["CD_lastEdited"] as? Date {
-                trailer.lastEdited = lastEdited
+            let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
+            if existing != nil && trailer.lastEdited >= cloudLastEdited {
+                // Skip overwrite
+            } else {
+                trailer.brandModel = record["CD_brandModel"] as? String ?? ""
+                trailer.color = record["CD_color"] as? String ?? ""
+                trailer.plate = record["CD_plate"] as? String ?? ""
+                trailer.notes = record["CD_notes"] as? String ?? ""
+                trailer.photoData = record["CD_photoData"] as? Data
+                if let lastEdited = record["CD_lastEdited"] as? Date {
+                    trailer.lastEdited = lastEdited
+                }
             }
         }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
@@ -361,15 +379,20 @@ final class CloudKitSyncService {
                 context.insert(log)
             }
 
-            if let date = record["CD_date"] as? Date {
-                log.date = date
-            }
-            log.reason = record["CD_reason"] as? String ?? ""
-            log.kmStart = record["CD_kmStart"] as? Int ?? 0
-            log.kmEnd = record["CD_kmEnd"] as? Int ?? 0
-            log.notes = record["CD_notes"] as? String ?? ""
-            if let lastEdited = record["CD_lastEdited"] as? Date {
-                log.lastEdited = lastEdited
+            let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
+            if existing != nil && log.lastEdited >= cloudLastEdited {
+                // Skip overwrite
+            } else {
+                if let date = record["CD_date"] as? Date {
+                    log.date = date
+                }
+                log.reason = record["CD_reason"] as? String ?? ""
+                log.kmStart = record["CD_kmStart"] as? Int ?? 0
+                log.kmEnd = record["CD_kmEnd"] as? Int ?? 0
+                log.notes = record["CD_notes"] as? String ?? ""
+                if let lastEdited = record["CD_lastEdited"] as? Date {
+                    log.lastEdited = lastEdited
+                }
             }
 
             // Link to vehicle if reference exists
@@ -434,13 +457,18 @@ final class CloudKitSyncService {
                 context.insert(checklist)
             }
 
-            if let typeString = record["CD_vehicleType"] as? String,
-               let type = VehicleType(rawValue: typeString) {
-                checklist.vehicleType = type
-            }
-            checklist.title = record["CD_title"] as? String ?? ""
-            if let lastEdited = record["CD_lastEdited"] as? Date {
-                checklist.lastEdited = lastEdited
+            let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
+            if existing != nil && checklist.lastEdited >= cloudLastEdited {
+                // Skip overwrite
+            } else {
+                if let typeString = record["CD_vehicleType"] as? String,
+                   let type = VehicleType(rawValue: typeString) {
+                    checklist.vehicleType = type
+                }
+                checklist.title = record["CD_title"] as? String ?? ""
+                if let lastEdited = record["CD_lastEdited"] as? Date {
+                    checklist.lastEdited = lastEdited
+                }
             }
 
             // Link to vehicle/trailer
@@ -510,13 +538,15 @@ final class CloudKitSyncService {
                 context.insert(item)
             }
 
-            item.section = record["CD_section"] as? String ?? ""
-            item.title = record["CD_title"] as? String ?? ""
-            if let stateString = record["CD_state"] as? String,
-               let state = ChecklistItemState(rawValue: stateString) {
-                item.state = state
+            let cloudChecklistItemState = (record["CD_state"] as? String).flatMap { ChecklistItemState(rawValue: $0) }
+            let localState = item.state
+            // Checklist items don’t track lastEdited individually; prefer not to overwrite if local has diverged state.
+            if let cloudState = cloudChecklistItemState, localState == .notSelected {
+                item.state = cloudState
             }
-            item.note = record["CD_note"] as? String
+            item.section = record["CD_section"] as? String ?? item.section
+            item.title = record["CD_title"] as? String ?? item.title
+            item.note = record["CD_note"] as? String ?? item.note
 
             // Link to checklist
             if let checklistRef = record["CD_checklist"] as? CKRecord.Reference {
@@ -535,7 +565,18 @@ final class CloudKitSyncService {
     private func saveRecord(_ record: CKRecord) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             privateDatabase.save(record) { _, error in
-                if let error = error {
+                if let error = error as? CKError, error.code == .zoneNotFound {
+                    Task {
+                        do {
+                            try await self.ensureZoneExists()
+                            // Retry once after ensuring the zone exists
+                            try await self.saveRecord(record)
+                            continuation.resume()
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                } else if let error {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume()
@@ -545,14 +586,10 @@ final class CloudKitSyncService {
     }
 
     private func fetchRecords(query: CKQuery) async throws -> [CKRecord] {
-        var results: [CKRecord] = []
-
-        // First attempt: custom zone
-        results = try await withCheckedThrowingContinuation { continuation in
+        var collected: [CKRecord] = []
+        return try await withCheckedThrowingContinuation { continuation in
             let operation = CKQueryOperation(query: query)
             operation.zoneID = recordZone.zoneID
-
-            var collected: [CKRecord] = []
             operation.recordMatchedBlock = { _, result in
                 if case .success(let record) = result { collected.append(record) }
             }
@@ -564,26 +601,6 @@ final class CloudKitSyncService {
             }
             privateDatabase.add(operation)
         }
-
-        if results.isEmpty {
-            // Fallback: default zone (no zoneID set)
-            results = try await withCheckedThrowingContinuation { continuation in
-                let operation = CKQueryOperation(query: query)
-                var collected: [CKRecord] = []
-                operation.recordMatchedBlock = { _, result in
-                    if case .success(let record) = result { collected.append(record) }
-                }
-                operation.queryResultBlock = { result in
-                    switch result {
-                    case .success: continuation.resume(returning: collected)
-                    case .failure(let error): continuation.resume(throwing: error)
-                    }
-                }
-                privateDatabase.add(operation)
-            }
-        }
-
-        return results
     }
 
     private func extractUUID(from recordName: String, prefix: String) -> UUID? {
