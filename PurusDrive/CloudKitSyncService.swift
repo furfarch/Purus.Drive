@@ -52,7 +52,11 @@ final class CloudKitSyncService {
             // Ensure zone exists
             try await ensureZoneExists()
 
-            // Fetch from cloud first
+            // Push local changes first so cloud has the latest before reconciliation
+            await pushAllToCloud()
+            await pushDeletions()
+
+            // Then fetch from cloud
             try await fetchTrailers(context: modelContext!)
             try await fetchVehicles(context: modelContext!)
             try await fetchChecklists(context: modelContext!)
@@ -60,9 +64,6 @@ final class CloudKitSyncService {
             try await fetchDriveLogs(context: modelContext!)
 
             try modelContext!.save()
-
-            // Then push local changes
-            await pushAllToCloud()
 
             report.finishedAt = Date()
             await MainActor.run { reportStore.lastReport = report }
