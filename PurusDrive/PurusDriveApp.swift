@@ -167,6 +167,17 @@ struct PurusDriveApp: App {
                             }
                         }
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
+                        migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
+                        SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncCompletedNotification"))) { _ in
+                        if var report = SyncReportStore.shared.lastReport {
+                            report.finishedAt = Date()
+                            SyncReportStore.shared.lastReport = report
+                        }
+                        migrationProgress.succeed(message: "Sync complete")
+                    }
                     .task {
                         await handleStorageModeTransitionIfNeeded()
                         await syncIfCloudEnabled()

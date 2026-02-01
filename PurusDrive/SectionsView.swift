@@ -44,6 +44,7 @@ struct SectionsView: View {
 
                     // Upper-right: only export/import and +
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        StorageModeBadge()
                         Button { showingAddVehicle = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add Vehicle")
                     }
@@ -153,6 +154,25 @@ private extension Result where Success == [URL] {
         let urls = try get()
         if let first = urls.first { return first }
         throw ImportService.ImportError.unsupportedFormat
+    }
+}
+
+private struct StorageModeBadge: View {
+    @State private var isICloud: Bool = {
+        let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
+        return raw == StorageLocation.icloud.rawValue
+    }()
+
+    var body: some View {
+        let symbol = isICloud ? "icloud" : "internaldrive"
+        let color: Color = isICloud ? .blue : .secondary
+        Image(systemName: symbol)
+            .foregroundStyle(color)
+            .accessibilityLabel(isICloud ? "Using iCloud" : "Using Local Storage")
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
+                isICloud = (raw == StorageLocation.icloud.rawValue)
+            }
     }
 }
 
