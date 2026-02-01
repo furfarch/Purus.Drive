@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A28CCB0F2F2F5B94006F36DD /* SyncReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */; };
 		A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,7 @@
 		A26AC49C2EFF4F0000AC99E4 /* PurusDrive.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PurusDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4AD2EFF4F0100AC99E4 /* PurusDriveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PurusDriveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4B72EFF4F0100AC99E4 /* PurusDriveUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PurusDriveUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncReport.swift; sourceTree = "<group>"; };
 		A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPhotoPickerView.swift; sourceTree = "<group>"; };
 		A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehiclesViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -100,6 +102,7 @@
 				A26AC49D2EFF4F0000AC99E4 /* Products */,
 				A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */,
 				A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */,
+				A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -258,6 +261,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */,
+				A28CCB0F2F2F5B94006F36DD /* SyncReport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -14,6 +14,7 @@
 import SwiftUI
 import SwiftData
 import CloudKit
+import Combine
 
 private struct StorageInitErrorView: View {
     let message: String
@@ -146,6 +147,26 @@ struct PurusDriveApp: App {
                             .environmentObject(migrationProgress)
                             .padding(.top, 8)
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncFetchedCountNotification"))) { output in
+                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                            if let last = SyncReportStore.shared.lastReport {
+                                var updated = last
+                                updated.fetched[type, default: 0] += count
+                                SyncReportStore.shared.lastReport = updated
+                                migrationProgress.update(message: "Fetched \(count) \(type)")
+                            }
+                        }
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncPushedCountNotification"))) { output in
+                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                            if let last = SyncReportStore.shared.lastReport {
+                                var updated = last
+                                updated.pushed[type, default: 0] += count
+                                SyncReportStore.shared.lastReport = updated
+                                migrationProgress.update(message: "Uploaded \(count) \(type)")
+                            }
+                        }
+                    }
                     .task {
                         await handleStorageModeTransitionIfNeeded()
                         await syncIfCloudEnabled()
@@ -191,18 +212,25 @@ struct PurusDriveApp: App {
     private func syncIfCloudEnabled() async {
         let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
         let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
-
         guard wantsICloud else { return }
 
-        // First-time migration: ensure we push local data up once after switching to iCloud
+        migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
+        var report = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
+        SyncReportStore.shared.lastReport = report
+
         let migrationFlagKey = "didInitialCloudMigration"
         if UserDefaults.standard.bool(forKey: migrationFlagKey) == false {
+            migrationProgress.update(message: "Uploading local data (first-time)")
             await cloudSyncService.pushAllToCloud()
             UserDefaults.standard.set(true, forKey: migrationFlagKey)
         }
 
-        // Regular full sync thereafter
+        migrationProgress.update(message: "Running full sync")
         await cloudSyncService.performFullSync()
+
+        report.finishedAt = Date()
+        SyncReportStore.shared.lastReport = report
+        migrationProgress.succeed(message: "Sync complete")
     }
 }
 

@@ -24,6 +24,7 @@ final class CloudKitSyncService {
     }()
 
     private var modelContext: ModelContext?
+    private let reportStore = SyncReportStore.shared
 
     private init() {}
 
@@ -40,7 +41,12 @@ final class CloudKitSyncService {
             return
         }
 
+        let mode = "iCloud"
+        var report = SyncReport(startedAt: Date(), finishedAt: nil, mode: mode)
+
         do {
+            print("CloudKit: full sync starting")
+
             // Ensure zone exists
             try await ensureZoneExists()
 
@@ -50,6 +56,10 @@ final class CloudKitSyncService {
             // Then push local changes
             await pushAllToCloud()
 
+            report.finishedAt = Date()
+            await MainActor.run { reportStore.lastReport = report }
+
+            print("CloudKit: full sync completed")
             print("CloudKitSyncService: Full sync completed")
         } catch {
             print("CloudKitSyncService: Sync error - \(error)")
@@ -149,6 +159,7 @@ final class CloudKitSyncService {
 
     private func pushVehicles(context: ModelContext) async throws {
         let vehicles = try context.fetch(FetchDescriptor<Vehicle>())
+        print("CloudKit: pushing vehicles …")
 
         for vehicle in vehicles {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
@@ -172,11 +183,17 @@ final class CloudKitSyncService {
 
             try await saveRecord(record)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": vehicles.count])
+
+        print("CloudKit: pushed \(vehicles.count) vehicles")
     }
 
     private func fetchVehicles(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Vehicle", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
+        print("CloudKit: fetched \(records.count) Vehicles")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
@@ -213,6 +230,7 @@ final class CloudKitSyncService {
 
     private func pushTrailers(context: ModelContext) async throws {
         let trailers = try context.fetch(FetchDescriptor<Trailer>())
+        print("CloudKit: pushing trailers …")
 
         for trailer in trailers {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
@@ -235,11 +253,17 @@ final class CloudKitSyncService {
 
             try await saveRecord(record)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": trailers.count])
+
+        print("CloudKit: pushed \(trailers.count) trailers")
     }
 
     private func fetchTrailers(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Trailer", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
+        print("CloudKit: fetched \(records.count) Trailers")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
@@ -269,6 +293,7 @@ final class CloudKitSyncService {
 
     private func pushDriveLogs(context: ModelContext) async throws {
         let driveLogs = try context.fetch(FetchDescriptor<DriveLog>())
+        print("CloudKit: pushing drive logs …")
 
         for log in driveLogs {
             let recordID = recordID(for: "CD_DriveLog", uuid: log.id)
@@ -292,11 +317,17 @@ final class CloudKitSyncService {
 
             try await saveRecord(record)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": driveLogs.count])
+
+        print("CloudKit: pushed \(driveLogs.count) drive logs")
     }
 
     private func fetchDriveLogs(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_DriveLog", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
+        print("CloudKit: fetched \(records.count) DriveLogs")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
@@ -337,6 +368,7 @@ final class CloudKitSyncService {
 
     private func pushChecklists(context: ModelContext) async throws {
         let checklists = try context.fetch(FetchDescriptor<Checklist>())
+        print("CloudKit: pushing checklists …")
 
         for checklist in checklists {
             let recordID = recordID(for: "CD_Checklist", uuid: checklist.id)
@@ -357,11 +389,17 @@ final class CloudKitSyncService {
 
             try await saveRecord(record)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": checklists.count])
+
+        print("CloudKit: pushed \(checklists.count) checklists")
     }
 
     private func fetchChecklists(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Checklist", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
+        print("CloudKit: fetched \(records.count) Checklists")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
@@ -408,6 +446,7 @@ final class CloudKitSyncService {
 
     private func pushChecklistItems(context: ModelContext) async throws {
         let items = try context.fetch(FetchDescriptor<ChecklistItem>())
+        print("CloudKit: pushing checklist items …")
 
         for item in items {
             let recordID = recordID(for: "CD_ChecklistItem", uuid: item.id)
@@ -425,11 +464,17 @@ final class CloudKitSyncService {
 
             try await saveRecord(record)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": items.count])
+
+        print("CloudKit: pushed \(items.count) checklist items")
     }
 
     private func fetchChecklistItems(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_ChecklistItem", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": records.count])
+        print("CloudKit: fetched \(records.count) ChecklistItems")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
@@ -527,3 +572,8 @@ final class CloudKitSyncService {
         }
     }
 }
+private extension Notification.Name {
+    static let syncFetchedCount = Notification.Name("SyncFetchedCountNotification")
+    static let syncPushedCount = Notification.Name("SyncPushedCountNotification")
+}
+

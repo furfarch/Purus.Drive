@@ -148,6 +148,13 @@ struct VehiclesListView: View {
         }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                // Storage mode indicator
+                StorageModeBadge()
+                // The existing add button likely lives elsewhere; this just adds the badge to the right side.
+            }
+        }
     }
 }
 
@@ -935,3 +942,23 @@ private enum VehicleDriveLogTitleFormatter {
         return "Drive Log \(df.string(from: date))"
     }
 }
+
+private struct StorageModeBadge: View {
+    @State private var isICloud: Bool = {
+        let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
+        return raw == StorageLocation.icloud.rawValue
+    }()
+    var body: some View {
+        let symbol = isICloud ? "icloud" : "internaldrive"
+        let color: Color = isICloud ? .blue : .secondary
+        Image(systemName: symbol)
+            .foregroundStyle(color)
+            .accessibilityLabel(isICloud ? "Using iCloud" : "Using Local Storage")
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                // refresh on foreground
+                let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
+                isICloud = (raw == StorageLocation.icloud.rawValue)
+            }
+    }
+}
+

@@ -6,7 +6,7 @@ import Combine
 final class MigrationProgress: ObservableObject {
     enum State {
         case idle
-        case running(title: String, message: String?)
+        case running(title: String, message: String?) // used for both migration and sync
         case success(message: String?)
         case failure(error: String)
     }

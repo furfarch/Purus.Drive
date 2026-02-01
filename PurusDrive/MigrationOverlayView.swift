@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct MigrationOverlayView: View {
     @EnvironmentObject var progress: MigrationProgress
@@ -54,3 +55,4 @@ struct MigrationOverlayView: View {
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
+

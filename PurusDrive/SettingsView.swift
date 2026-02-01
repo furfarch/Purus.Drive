@@ -1,6 +1,7 @@
 import SwiftUI
 import CloudKit
 import Combine
+import UIKit
 
 enum StorageLocation: String, CaseIterable, Identifiable {
     case local
@@ -180,6 +181,48 @@ struct SettingsView: View {
                     Button("Refresh iCloud status") {
                         cloudStatus.refresh()
                     }
+
+                    Button {
+                        Task { await CloudKitSyncService.shared.performFullSync() }
+                    } label: {
+                        Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                    }
+
+                    if let report = SyncReportStore.shared.lastReport {
+                        LabeledContent("Last Sync") {
+                            Text(report.finishedAt?.formatted(date: .abbreviated, time: .standard) ?? "In progress")
+                                .foregroundStyle(.secondary)
+                        }
+                        LabeledContent("Pushed") {
+                            Text(report.pushed.map { "\($0.key): \($0.value)" }.joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        LabeledContent("Fetched") {
+                            Text(report.fetched.map { "\($0.key): \($0.value)" }.joined(separator: ", "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let err = report.error {
+                            Text("Error: \(err)")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+
+                        Button("Copy Sync Report") {
+                            let df = ISO8601DateFormatter()
+                            let started = df.string(from: report.startedAt)
+                            let finished = report.finishedAt.map { df.string(from: $0) } ?? "-"
+                            var lines: [String] = []
+                            lines.append("Mode: \(report.mode)")
+                            lines.append("Started: \(started)")
+                            lines.append("Finished: \(finished)")
+                            lines.append("Pushed: \(report.pushed)")
+                            lines.append("Fetched: \(report.fetched)")
+                            if let err = report.error { lines.append("Error: \(err)") }
+                            UIPasteboard.general.string = lines.joined(separator: "\n")
+                        }
+                    }
                 }
             }
 
@@ -193,6 +236,24 @@ struct SettingsView: View {
                 Text("This deletes the local database on this device. The app will close and needs to be reopened.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("About") {
+                LabeledContent("Version") {
+                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Build") {
+                    Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-")
+                        .foregroundStyle(.secondary)
+                }
+                LabeledContent("Bundle Identifier") {
+                    Text(Bundle.main.bundleIdentifier ?? "-")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
 
             Section {
