@@ -148,13 +148,6 @@ struct VehiclesListView: View {
         }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                // Storage mode indicator
-                StorageModeBadge()
-                // The existing add button likely lives elsewhere; this just adds the badge to the right side.
-            }
-        }
     }
 }
 

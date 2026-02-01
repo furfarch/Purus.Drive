@@ -167,6 +167,11 @@ struct PurusDriveApp: App {
                             }
                         }
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncImportedCountNotification"))) { output in
+                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                            migrationProgress.update(message: "Imported \(count) \(type)")
+                        }
+                    }
                     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
                         migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
                         SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")

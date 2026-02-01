@@ -224,6 +224,7 @@ final class CloudKitSyncService {
 
             // Trailer relationship handled after trailers are fetched
         }
+        NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
     }
 
     // MARK: - Trailer Sync
@@ -287,6 +288,7 @@ final class CloudKitSyncService {
                 trailer.lastEdited = lastEdited
             }
         }
+        NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
     }
 
     // MARK: - DriveLog Sync
@@ -362,6 +364,7 @@ final class CloudKitSyncService {
                 }
             }
         }
+        NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
     }
 
     // MARK: - Checklist Sync
@@ -440,6 +443,7 @@ final class CloudKitSyncService {
                 }
             }
         }
+        NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
     }
 
     // MARK: - ChecklistItem Sync
@@ -506,6 +510,7 @@ final class CloudKitSyncService {
                 }
             }
         }
+        NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": records.count])
     }
 
     // MARK: - CloudKit Helpers
@@ -523,31 +528,45 @@ final class CloudKitSyncService {
     }
 
     private func fetchRecords(query: CKQuery) async throws -> [CKRecord] {
-        query.sortDescriptors = [NSSortDescriptor(key: "___createTime", ascending: true)]
+        var results: [CKRecord] = []
 
-        return try await withCheckedThrowingContinuation { continuation in
+        // First attempt: custom zone
+        results = try await withCheckedThrowingContinuation { continuation in
             let operation = CKQueryOperation(query: query)
             operation.zoneID = recordZone.zoneID
 
-            var results: [CKRecord] = []
-
+            var collected: [CKRecord] = []
             operation.recordMatchedBlock = { _, result in
-                if case .success(let record) = result {
-                    results.append(record)
-                }
+                if case .success(let record) = result { collected.append(record) }
             }
-
             operation.queryResultBlock = { result in
                 switch result {
-                case .success:
-                    continuation.resume(returning: results)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+                case .success: continuation.resume(returning: collected)
+                case .failure(let error): continuation.resume(throwing: error)
                 }
             }
-
             privateDatabase.add(operation)
         }
+
+        if results.isEmpty {
+            // Fallback: default zone (no zoneID set)
+            results = try await withCheckedThrowingContinuation { continuation in
+                let operation = CKQueryOperation(query: query)
+                var collected: [CKRecord] = []
+                operation.recordMatchedBlock = { _, result in
+                    if case .success(let record) = result { collected.append(record) }
+                }
+                operation.queryResultBlock = { result in
+                    switch result {
+                    case .success: continuation.resume(returning: collected)
+                    case .failure(let error): continuation.resume(throwing: error)
+                    }
+                }
+                privateDatabase.add(operation)
+            }
+        }
+
+        return results
     }
 
     private func extractUUID(from recordName: String, prefix: String) -> UUID? {
@@ -575,5 +594,6 @@ final class CloudKitSyncService {
 private extension Notification.Name {
     static let syncFetchedCount = Notification.Name("SyncFetchedCountNotification")
     static let syncPushedCount = Notification.Name("SyncPushedCountNotification")
+    static let syncImportedCount = Notification.Name("SyncImportedCountNotification")
 }
 
