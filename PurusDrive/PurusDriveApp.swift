@@ -160,6 +160,18 @@ struct PurusDriveApp: App {
                             }
                         }
                     }
+                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestFullSyncNotification"))) { _ in
+                        migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
+                        SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
+                        Task { @MainActor in
+                            await CloudKitSyncService.shared.performFullSync()
+                            if var report = SyncReportStore.shared.lastReport {
+                                report.finishedAt = Date()
+                                SyncReportStore.shared.lastReport = report
+                            }
+                            migrationProgress.succeed(message: "Sync complete")
+                        }
+                    }
             } else {
                 StorageInitErrorView(message: initErrorMessage ?? "Unknown error")
             }
@@ -262,6 +274,18 @@ private struct SyncOverlayModifier: ViewModifier {
                         SyncReportStore.shared.lastReport = report
                     }
                     migrationProgress.succeed(message: "Sync complete")
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestFullSyncNotification"))) { _ in
+                    migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
+                    SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
+                    Task { @MainActor in
+                        await CloudKitSyncService.shared.performFullSync()
+                        if var report = SyncReportStore.shared.lastReport {
+                            report.finishedAt = Date()
+                            SyncReportStore.shared.lastReport = report
+                        }
+                        migrationProgress.succeed(message: "Sync complete")
+                    }
                 }
         } else {
             content

@@ -183,13 +183,7 @@ struct SettingsView: View {
                     }
 
                     Button {
-                        Task {
-                            // Notify UI to show sync overlay
-                            NotificationCenter.default.post(name: Notification.Name("SyncStartedNotification"), object: nil)
-                            await CloudKitSyncService.shared.performFullSync()
-                            // Notify UI to hide overlay / show success
-                            NotificationCenter.default.post(name: Notification.Name("SyncCompletedNotification"), object: nil)
-                        }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     } label: {
                         Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
                     }

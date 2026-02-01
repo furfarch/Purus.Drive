@@ -100,6 +100,13 @@ struct VehiclesListView: View {
                         }
 
                         Spacer()
+                        HStack(spacing: 6) {
+                            // mini icons: checklists and logs
+                            let hasChecklists = !(v.checklists ?? []).isEmpty
+                            let hasLogs = !(v.driveLogs ?? []).isEmpty
+                            if hasChecklists { Image(systemName: "checklist").font(.caption2).foregroundStyle(.secondary) }
+                            if hasLogs { Image(systemName: "road.lanes").font(.caption2).foregroundStyle(.secondary) }
+                        }
                         Text(v.lastEdited, style: .time)
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
