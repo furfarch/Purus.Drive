@@ -6,6 +6,8 @@ struct VehiclesListView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
+    @Query(sort: \DriveLog.date, order: .reverse) private var allDriveLogs: [DriveLog]
+    @Query(sort: \Checklist.lastEdited, order: .reverse) private var allChecklists: [Checklist]
 
     // Trailers linked to vehicles should not appear as standalone rows.
     private var linkedTrailerIDs: Set<UUID> {
@@ -63,8 +65,10 @@ struct VehiclesListView: View {
                 }
                 .swipeActions {
                     Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
                         modelContext.delete(t)
                         do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
                     } label: { Label("Delete", systemImage: "trash") }
                 }
             }
@@ -102,8 +106,8 @@ struct VehiclesListView: View {
                         Spacer()
                         HStack(spacing: 6) {
                             // mini icons: checklists and logs
-                            let hasChecklists = !(v.checklists ?? []).isEmpty
-                            let hasLogs = !(v.driveLogs ?? []).isEmpty
+                            let hasChecklists = allChecklists.contains { $0.vehicle === v } || allChecklists.contains { $0.trailer === v.trailer && v.trailer != nil }
+                            let hasLogs = allDriveLogs.contains { $0.vehicle === v }
                             if hasChecklists { Image(systemName: "checklist").font(.caption2).foregroundStyle(.secondary) }
                             if hasLogs { Image(systemName: "road.lanes").font(.caption2).foregroundStyle(.secondary) }
                         }
@@ -114,8 +118,10 @@ struct VehiclesListView: View {
                 }
                 .swipeActions {
                     Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
                         modelContext.delete(v)
                         do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
                     } label: { Label("Delete", systemImage: "trash") }
                 }
 
@@ -527,8 +533,10 @@ struct VehicleFormView: View {
             if let vehicle = vehicle {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id)
                         modelContext.delete(vehicle)
                         try? modelContext.save()
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
                         dismiss()
                     } label: {
                         Image(systemName: "trash")
@@ -893,8 +901,10 @@ private struct NewTrailerFormView: View {
             if let existing {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: existing.id)
                         modelContext.delete(existing)
                         try? modelContext.save()
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
                         dismiss()
                     } label: {
                         Image(systemName: "trash")

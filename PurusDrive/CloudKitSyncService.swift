@@ -108,9 +108,59 @@ final class CloudKitSyncService {
             try await pushDriveLogs(context: context)
 
             print("CloudKitSyncService: Push to cloud completed")
+
+            await pushDeletions()
         } catch {
             print("CloudKitSyncService: Push error - \(error)")
             lastErrorMessage = String(describing: error)
+        }
+    }
+
+    /// Records a local deletion so it can be pushed to CloudKit.
+    func markDeleted(entityType: String, id: UUID) {
+        guard let context = modelContext else { return }
+        let tombstone = DeletedRecord(entityType: entityType, id: id, deletedAt: .now)
+        context.insert(tombstone)
+        do { try context.save() } catch { print("CloudKit: failed saving tombstone: \(error)") }
+    }
+
+    /// Pushes pending deletions to CloudKit and removes tombstones on success.
+    func pushDeletions() async {
+        guard let context = modelContext else { return }
+        do {
+            let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>())
+            guard !tombstones.isEmpty else { return }
+            let recordIDs: [CKRecord.ID] = tombstones.map { ts in
+                let type = mappedRecordType(from: ts.entityType)
+                return CKRecord.ID(recordName: "\(type)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
+            }
+            let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: recordIDs)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                op.modifyRecordsResultBlock = { result in
+                    switch result {
+                    case .success: continuation.resume()
+                    case .failure(let error): continuation.resume(throwing: error)
+                    }
+                }
+                privateDatabase.add(op)
+            }
+            // On success, remove tombstones locally
+            for ts in tombstones { context.delete(ts) }
+            try context.save()
+            print("CloudKit: pushed \(tombstones.count) deletions")
+        } catch {
+            print("CloudKit: pushDeletions error - \(error)")
+        }
+    }
+
+    private func mappedRecordType(from entityType: String) -> String {
+        switch entityType {
+        case "Vehicle": return "CD_Vehicle"
+        case "Trailer": return "CD_Trailer"
+        case "DriveLog": return "CD_DriveLog"
+        case "Checklist": return "CD_Checklist"
+        case "ChecklistItem": return "CD_ChecklistItem"
+        default: return entityType
         }
     }
 
@@ -251,6 +301,9 @@ final class CloudKitSyncService {
                 }
             }
         }
+        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
+        let locals = try context.fetch(FetchDescriptor<Vehicle>())
+        for v in locals where !cloudIDs.contains(v.id) { context.delete(v) }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
     }
 
@@ -323,6 +376,9 @@ final class CloudKitSyncService {
                 }
             }
         }
+        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
+        let locals = try context.fetch(FetchDescriptor<Trailer>())
+        for t in locals where !cloudIDs.contains(t.id) { context.delete(t) }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
     }
 
@@ -403,7 +459,18 @@ final class CloudKitSyncService {
                     log.vehicle = try context.fetch(vDesc).first
                 }
             }
+            // Link to checklist if reference exists
+            if let checklistRef = record["CD_checklist"] as? CKRecord.Reference {
+                let checklistUUID = extractUUID(from: checklistRef.recordID.recordName, prefix: "CD_Checklist_")
+                if let cUUID = checklistUUID {
+                    let cDesc = FetchDescriptor<Checklist>(predicate: #Predicate { $0.id == cUUID })
+                    log.checklist = try context.fetch(cDesc).first
+                }
+            }
         }
+        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
+        let locals = try context.fetch(FetchDescriptor<DriveLog>())
+        for l in locals where !cloudIDs.contains(l.id) { context.delete(l) }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
     }
 
@@ -488,6 +555,9 @@ final class CloudKitSyncService {
                 }
             }
         }
+        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
+        let locals = try context.fetch(FetchDescriptor<Checklist>())
+        for c in locals where !cloudIDs.contains(c.id) { context.delete(c) }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
     }
 
@@ -557,6 +627,9 @@ final class CloudKitSyncService {
                 }
             }
         }
+        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
+        let locals = try context.fetch(FetchDescriptor<ChecklistItem>())
+        for i in locals where !cloudIDs.contains(i.id) { context.delete(i) }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": records.count])
     }
 

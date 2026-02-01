@@ -52,8 +52,13 @@ struct ChecklistListView: View {
     }
 
     private func delete(at offsets: IndexSet) {
-        for i in offsets { modelContext.delete(checklists[i]) }
+        for i in offsets {
+            let cl = checklists[i]
+            CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
+            modelContext.delete(cl)
+        }
         try? modelContext.save()
+        Task { await CloudKitSyncService.shared.pushDeletions() }
     }
 }
 
@@ -212,8 +217,10 @@ struct ChecklistEditorView: View {
                     for log in allDriveLogs where log.checklist === checklist {
                         log.checklist = nil
                     }
+                    CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: checklist.id)
                     modelContext.delete(checklist)
                     do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
+                    Task { await CloudKitSyncService.shared.pushDeletions() }
                     dismiss()
                 } label: {
                     Image(systemName: "trash")
