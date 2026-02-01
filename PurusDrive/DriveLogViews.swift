@@ -70,8 +70,13 @@ struct DriveLogListView: View {
     }
 
     private func deleteLogs(at offsets: IndexSet) {
-        for index in offsets { context.delete(logs[index]) }
+        for index in offsets {
+            let log = logs[index]
+            CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id)
+            context.delete(log)
+        }
         try? context.save()
+        Task { await CloudKitSyncService.shared.pushDeletions() }
     }
 }
 
@@ -219,8 +224,10 @@ struct DriveLogEditorView: View {
     }
 
     private func deleteLog() {
+        CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id)
         context.delete(log)
         do { try context.save() } catch { print("ERROR: failed deleting drive log: \(error)") }
+        Task { await CloudKitSyncService.shared.pushDeletions() }
         dismiss()
     }
 }
