@@ -341,8 +341,10 @@ struct VehicleFormView: View {
                         }
                         .swipeActions {
                             Button(role: .destructive) {
+                                CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id)
                                 modelContext.delete(log)
                                 do { try modelContext.save() } catch { print("ERROR: failed deleting drive log: \(error)") }
+                                Task { await CloudKitSyncService.shared.pushDeletions() }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -380,11 +382,11 @@ struct VehicleFormView: View {
                         .swipeActions {
                             Button(role: .destructive) {
                                 // Clear any log references first.
-                                for log in allDriveLogs where log.checklist === cl {
-                                    log.checklist = nil
-                                }
+                                for log in allDriveLogs where log.checklist === cl { log.checklist = nil }
+                                CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
                                 modelContext.delete(cl)
                                 do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
+                                Task { await CloudKitSyncService.shared.pushDeletions() }
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -405,6 +407,7 @@ struct VehicleFormView: View {
 
                     modelContext.insert(new)
                     do { try modelContext.save() } catch { print("ERROR: failed saving new checklist: \(error)") }
+                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
                     newChecklistToEdit = new
                 } label: {
                     Label("Add Checklist", systemImage: "plus")
@@ -574,6 +577,7 @@ struct VehicleFormView: View {
                                 let new = DriveLog(vehicle: vehicle)
                                 modelContext.insert(new)
                                 do { try modelContext.save() } catch { print("ERROR: failed inserting new drive log: \(error)") }
+                                Task { await CloudKitSyncService.shared.pushAllToCloud() }
                                 newDriveLogToEdit = new
                             }
                     } else if let newDriveLogToEdit {
@@ -887,6 +891,7 @@ private struct NewTrailerFormView: View {
                                             trailer: existing)
                         modelContext.insert(new)
                         try? modelContext.save()
+                        Task { await CloudKitSyncService.shared.pushAllToCloud() }
                         newChecklistToEdit = new
                     } label: {
                         Label("Add Checklist", systemImage: "plus")

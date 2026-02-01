@@ -84,6 +84,7 @@ struct PurusDriveApp: App {
             DriveLog.self,
             Checklist.self,
             ChecklistItem.self,
+            DeletedRecord.self,
         ])
 
         // Resolve storage preference: default to Local on true fresh install, otherwise respect saved preference

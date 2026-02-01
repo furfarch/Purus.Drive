@@ -26,6 +26,86 @@ final class CloudKitSyncService {
     private var modelContext: ModelContext?
     private let reportStore = SyncReportStore.shared
     private var lastErrorMessage: String? = nil
+    private var shouldReconcileDeletes: Bool { lastErrorMessage == nil }
+
+    // MARK: - Tombstone Helpers
+    private func localDelete(entityType: String, id: UUID, context: ModelContext) throws {
+        switch entityType {
+        case "Vehicle":
+            if let v = try context.fetch(FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == id })).first {
+                // delete associated logs
+                if let logs = v.driveLogs { for l in logs { context.delete(l) } }
+                // delete associated checklists
+                if let cls = v.checklists { for c in cls { context.delete(c) } }
+                // unlink trailer
+                v.trailer?.linkedVehicle = nil
+                context.delete(v)
+            }
+        case "Trailer":
+            if let t = try context.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == id })).first {
+                // delete associated checklists
+                if let cls = t.checklists { for c in cls { context.delete(c) } }
+                // unlink vehicle
+                t.linkedVehicle?.trailer = nil
+                context.delete(t)
+            }
+        case "DriveLog":
+            if let l = try context.fetch(FetchDescriptor<DriveLog>(predicate: #Predicate { $0.id == id })).first {
+                context.delete(l)
+            }
+        case "Checklist":
+            if let c = try context.fetch(FetchDescriptor<Checklist>(predicate: #Predicate { $0.id == id })).first {
+                // clear references from logs
+                let logs = try context.fetch(FetchDescriptor<DriveLog>())
+                for log in logs where log.checklist === c { log.checklist = nil }
+                context.delete(c)
+            }
+        case "ChecklistItem":
+            if let i = try context.fetch(FetchDescriptor<ChecklistItem>(predicate: #Predicate { $0.id == id })).first {
+                context.delete(i)
+            }
+        default: break
+        }
+    }
+
+    private func tombstoneRecord(for ts: DeletedRecord) -> CKRecord {
+        let recID = CKRecord.ID(recordName: "CD_Deleted_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
+        let rec = CKRecord(recordType: "CD_Deleted", recordID: recID)
+        rec["entityType"] = ts.entityType
+        rec["entityID"] = ts.id.uuidString
+        rec["deletedAt"] = ts.deletedAt
+        return rec
+    }
+
+    /// Fetch remote tombstones and apply local deletions, then remove the tombstones from CloudKit.
+    func fetchRemoteTombstones() async {
+        guard let context = modelContext else { return }
+        do {
+            let query = CKQuery(recordType: "CD_Deleted", predicate: NSPredicate(value: true))
+            let records = try await fetchRecords(query: query)
+            if records.isEmpty { return }
+            var toDeleteFromCloud: [CKRecord.ID] = []
+            for rec in records {
+                guard let type = rec["entityType"] as? String,
+                      let idStr = rec["entityID"] as? String,
+                      let uuid = UUID(uuidString: idStr) else { continue }
+                do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
+                toDeleteFromCloud.append(rec.recordID)
+            }
+            try context.save()
+            if !toDeleteFromCloud.isEmpty {
+                let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: toDeleteFromCloud)
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    op.modifyRecordsResultBlock = { result in
+                        switch result { case .success: continuation.resume(); case .failure(let error): continuation.resume(throwing: error) }
+                    }
+                    privateDatabase.add(op)
+                }
+            }
+        } catch {
+            print("CloudKit: fetchRemoteTombstones error - \(error)")
+        }
+    }
 
     private init() {}
 
@@ -55,6 +135,9 @@ final class CloudKitSyncService {
             // Push local changes first so cloud has the latest before reconciliation
             await pushAllToCloud()
             await pushDeletions()
+
+            // Apply remote deletions via tombstones
+            await fetchRemoteTombstones()
 
             // Then fetch from cloud
             try await fetchTrailers(context: modelContext!)
@@ -120,35 +203,40 @@ final class CloudKitSyncService {
     /// Records a local deletion so it can be pushed to CloudKit.
     func markDeleted(entityType: String, id: UUID) {
         guard let context = modelContext else { return }
-        let tombstone = DeletedRecord(entityType: entityType, id: id, deletedAt: .now)
-        context.insert(tombstone)
+        // Upsert: avoid duplicate unique id constraint
+        if let fetched = try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == id })),
+           let existing = fetched.first {
+            existing.entityType = entityType
+            existing.deletedAt = .now
+        } else {
+            let tombstone = DeletedRecord(entityType: entityType, id: id, deletedAt: .now)
+            context.insert(tombstone)
+        }
         do { try context.save() } catch { print("CloudKit: failed saving tombstone: \(error)") }
     }
 
     /// Pushes pending deletions to CloudKit and removes tombstones on success.
     func pushDeletions() async {
-        guard let context = modelContext else { return }
         do {
+            guard let context = modelContext else { return }
             let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>())
             guard !tombstones.isEmpty else { return }
-            let recordIDs: [CKRecord.ID] = tombstones.map { ts in
+            let recordIDsToDelete: [CKRecord.ID] = tombstones.map { ts in
                 let type = mappedRecordType(from: ts.entityType)
                 return CKRecord.ID(recordName: "\(type)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
             }
-            let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: recordIDs)
+            let tombstoneRecords: [CKRecord] = tombstones.map { tombstoneRecord(for: $0) }
+            let op = CKModifyRecordsOperation(recordsToSave: tombstoneRecords, recordIDsToDelete: recordIDsToDelete)
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 op.modifyRecordsResultBlock = { result in
-                    switch result {
-                    case .success: continuation.resume()
-                    case .failure(let error): continuation.resume(throwing: error)
-                    }
+                    switch result { case .success: continuation.resume(); case .failure(let error): continuation.resume(throwing: error) }
                 }
                 privateDatabase.add(op)
             }
-            // On success, remove tombstones locally
+            // Remove local tombstones on success
             for ts in tombstones { context.delete(ts) }
             try context.save()
-            print("CloudKit: pushed \(tombstones.count) deletions")
+            print("CloudKit: pushed \(tombstones.count) deletions (with tombstones)")
         } catch {
             print("CloudKit: pushDeletions error - \(error)")
         }
@@ -302,9 +390,7 @@ final class CloudKitSyncService {
                 }
             }
         }
-        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
-        let locals = try context.fetch(FetchDescriptor<Vehicle>())
-        for v in locals where !cloudIDs.contains(v.id) { context.delete(v) }
+        // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
     }
 
@@ -377,9 +463,7 @@ final class CloudKitSyncService {
                 }
             }
         }
-        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
-        let locals = try context.fetch(FetchDescriptor<Trailer>())
-        for t in locals where !cloudIDs.contains(t.id) { context.delete(t) }
+        // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
     }
 
@@ -469,14 +553,7 @@ final class CloudKitSyncService {
                 }
             }
         }
-        // Guarded deletion: only delete locals that have an explicit tombstone
-        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
-        let locals = try context.fetch(FetchDescriptor<DriveLog>())
-        let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.entityType == "DriveLog" }))
-        let tombstoneIDs = Set(tombstones.map { $0.id })
-        for l in locals where !cloudIDs.contains(l.id) {
-            if tombstoneIDs.contains(l.id) { context.delete(l) }
-        }
+        // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
     }
 
@@ -561,14 +638,7 @@ final class CloudKitSyncService {
                 }
             }
         }
-        // Guarded deletion: only delete locals that have an explicit tombstone
-        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
-        let locals = try context.fetch(FetchDescriptor<Checklist>())
-        let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.entityType == "Checklist" }))
-        let tombstoneIDs = Set(tombstones.map { $0.id })
-        for c in locals where !cloudIDs.contains(c.id) {
-            if tombstoneIDs.contains(c.id) { context.delete(c) }
-        }
+        // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
     }
 
@@ -638,9 +708,7 @@ final class CloudKitSyncService {
                 }
             }
         }
-        let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
-        let locals = try context.fetch(FetchDescriptor<ChecklistItem>())
-        for i in locals where !cloudIDs.contains(i.id) { context.delete(i) }
+        // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": records.count])
     }
 
