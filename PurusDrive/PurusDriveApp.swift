@@ -16,6 +16,12 @@ import SwiftData
 import CloudKit
 import Combine
 
+#if DEBUG
+let ENABLE_SYNC_OVERLAY = true
+#else
+let ENABLE_SYNC_OVERLAY = false
+#endif
+
 private struct StorageInitErrorView: View {
     let message: String
 
@@ -141,48 +147,7 @@ struct PurusDriveApp: App {
             if let container {
                 ContentView()
                     .modelContainer(container)
-                    .environmentObject(migrationProgress)
-                    .overlay(alignment: .top) {
-                        MigrationOverlayView()
-                            .environmentObject(migrationProgress)
-                            .padding(.top, 8)
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncFetchedCountNotification"))) { output in
-                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
-                            if let last = SyncReportStore.shared.lastReport {
-                                var updated = last
-                                updated.fetched[type, default: 0] += count
-                                SyncReportStore.shared.lastReport = updated
-                                migrationProgress.update(message: "Fetched \(count) \(type)")
-                            }
-                        }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncPushedCountNotification"))) { output in
-                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
-                            if let last = SyncReportStore.shared.lastReport {
-                                var updated = last
-                                updated.pushed[type, default: 0] += count
-                                SyncReportStore.shared.lastReport = updated
-                                migrationProgress.update(message: "Uploaded \(count) \(type)")
-                            }
-                        }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncImportedCountNotification"))) { output in
-                        if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
-                            migrationProgress.update(message: "Imported \(count) \(type)")
-                        }
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
-                        migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
-                        SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
-                    }
-                    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncCompletedNotification"))) { _ in
-                        if var report = SyncReportStore.shared.lastReport {
-                            report.finishedAt = Date()
-                            SyncReportStore.shared.lastReport = report
-                        }
-                        migrationProgress.succeed(message: "Sync complete")
-                    }
+                    .modifier(SyncOverlayModifier(enabled: ENABLE_SYNC_OVERLAY, migrationProgress: migrationProgress))
                     .task {
                         await handleStorageModeTransitionIfNeeded()
                         await syncIfCloudEnabled()
@@ -247,6 +212,60 @@ struct PurusDriveApp: App {
         report.finishedAt = Date()
         SyncReportStore.shared.lastReport = report
         migrationProgress.succeed(message: "Sync complete")
+    }
+}
+
+private struct SyncOverlayModifier: ViewModifier {
+    let enabled: Bool
+    @ObservedObject var migrationProgress: MigrationProgress
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .environmentObject(migrationProgress)
+                .overlay(alignment: .top) {
+                    MigrationOverlayView()
+                        .environmentObject(migrationProgress)
+                        .padding(.top, 8)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncFetchedCountNotification"))) { output in
+                    if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                        if let last = SyncReportStore.shared.lastReport {
+                            var updated = last
+                            updated.fetched[type, default: 0] += count
+                            SyncReportStore.shared.lastReport = updated
+                            migrationProgress.update(message: "Fetched \(count) \(type)")
+                        }
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncPushedCountNotification"))) { output in
+                    if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                        if let last = SyncReportStore.shared.lastReport {
+                            var updated = last
+                            updated.pushed[type, default: 0] += count
+                            SyncReportStore.shared.lastReport = updated
+                            migrationProgress.update(message: "Uploaded \(count) \(type)")
+                        }
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncImportedCountNotification"))) { output in
+                    if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
+                        migrationProgress.update(message: "Imported \(count) \(type)")
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
+                    migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
+                    SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncCompletedNotification"))) { _ in
+                    if var report = SyncReportStore.shared.lastReport {
+                        report.finishedAt = Date()
+                        SyncReportStore.shared.lastReport = report
+                    }
+                    migrationProgress.succeed(message: "Sync complete")
+                }
+        } else {
+            content
+        }
     }
 }
 

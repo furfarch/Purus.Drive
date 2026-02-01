@@ -51,7 +51,13 @@ final class CloudKitSyncService {
             try await ensureZoneExists()
 
             // Fetch from cloud first
-            await fetchAllFromCloud()
+            try await fetchTrailers(context: modelContext!)
+            try await fetchVehicles(context: modelContext!)
+            try await fetchChecklists(context: modelContext!)
+            try await fetchChecklistItems(context: modelContext!)
+            try await fetchDriveLogs(context: modelContext!)
+
+            try modelContext!.save()
 
             // Then push local changes
             await pushAllToCloud()
@@ -71,11 +77,11 @@ final class CloudKitSyncService {
         guard let context = modelContext else { return }
 
         do {
-            try await fetchVehicles(context: context)
             try await fetchTrailers(context: context)
-            try await fetchDriveLogs(context: context)
+            try await fetchVehicles(context: context)
             try await fetchChecklists(context: context)
             try await fetchChecklistItems(context: context)
+            try await fetchDriveLogs(context: context)
 
             try context.save()
             print("CloudKitSyncService: Fetch from cloud completed")
@@ -89,11 +95,11 @@ final class CloudKitSyncService {
         guard let context = modelContext else { return }
 
         do {
-            try await pushVehicles(context: context)
             try await pushTrailers(context: context)
-            try await pushDriveLogs(context: context)
+            try await pushVehicles(context: context)
             try await pushChecklists(context: context)
             try await pushChecklistItems(context: context)
+            try await pushDriveLogs(context: context)
 
             print("CloudKitSyncService: Push to cloud completed")
         } catch {
@@ -222,7 +228,15 @@ final class CloudKitSyncService {
                 vehicle.lastEdited = lastEdited
             }
 
-            // Trailer relationship handled after trailers are fetched
+            // Link to trailer if reference exists (trailers were fetched first)
+            if let trailerRef = record["CD_trailer"] as? CKRecord.Reference {
+                let trailerUUID = extractUUID(from: trailerRef.recordID.recordName, prefix: "CD_Trailer_")
+                if let tUUID = trailerUUID {
+                    let tDesc = FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == tUUID })
+                    vehicle.trailer = try context.fetch(tDesc).first
+                    vehicle.trailer?.linkedVehicle = vehicle
+                }
+            }
         }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
     }
@@ -248,9 +262,12 @@ final class CloudKitSyncService {
                 record["CD_photoData"] = photoData
             }
 
+            // Removed linkedVehicle reference to avoid circular dependency
+            /*
             if let linkedVehicle = trailer.linkedVehicle {
                 record["CD_linkedVehicle"] = referenceID(for: "CD_Vehicle", uuid: linkedVehicle.id)
             }
+            */
 
             try await saveRecord(record)
         }

@@ -146,6 +146,16 @@ struct VehiclesListView: View {
                 }
             }
         }
+        .refreshable {
+            // Trigger an on-demand sync when in iCloud mode
+            let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
+            if raw == StorageLocation.icloud.rawValue {
+                // Post notifications so the overlay shows progress
+                NotificationCenter.default.post(name: Notification.Name("SyncStartedNotification"), object: nil)
+                await CloudKitSyncService.shared.performFullSync()
+                NotificationCenter.default.post(name: Notification.Name("SyncCompletedNotification"), object: nil)
+            }
+        }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
     }
