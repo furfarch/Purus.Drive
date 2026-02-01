@@ -469,9 +469,14 @@ final class CloudKitSyncService {
                 }
             }
         }
+        // Guarded deletion: only delete locals that have an explicit tombstone
         let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
         let locals = try context.fetch(FetchDescriptor<DriveLog>())
-        for l in locals where !cloudIDs.contains(l.id) { context.delete(l) }
+        let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.entityType == "DriveLog" }))
+        let tombstoneIDs = Set(tombstones.map { $0.id })
+        for l in locals where !cloudIDs.contains(l.id) {
+            if tombstoneIDs.contains(l.id) { context.delete(l) }
+        }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
     }
 
@@ -556,9 +561,14 @@ final class CloudKitSyncService {
                 }
             }
         }
+        // Guarded deletion: only delete locals that have an explicit tombstone
         let cloudIDs: Set<UUID> = Set(records.compactMap { ( $0["CD_id"] as? String ).flatMap(UUID.init) })
         let locals = try context.fetch(FetchDescriptor<Checklist>())
-        for c in locals where !cloudIDs.contains(c.id) { context.delete(c) }
+        let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.entityType == "Checklist" }))
+        let tombstoneIDs = Set(tombstones.map { $0.id })
+        for c in locals where !cloudIDs.contains(c.id) {
+            if tombstoneIDs.contains(c.id) { context.delete(c) }
+        }
         NotificationCenter.default.post(name: .syncImportedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
     }
 
