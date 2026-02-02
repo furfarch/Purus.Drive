@@ -117,7 +117,7 @@ final class CloudKitSyncService {
 
     /// Performs a full sync: fetches from cloud then pushes local changes.
     func performFullSync() async {
-        guard modelContext != nil else {
+        guard let context = modelContext else {
             print("CloudKitSyncService: No model context set")
             return
         }
@@ -125,57 +125,63 @@ final class CloudKitSyncService {
         let mode = "iCloud"
         var report = SyncReport(startedAt: Date(), finishedAt: nil, mode: mode)
 
+        print("CloudKit: full sync starting")
+        lastErrorMessage = nil
+
+        // Ensure zone exists
         do {
-            print("CloudKit: full sync starting")
-            lastErrorMessage = nil
-
-            // Ensure zone exists
             try await ensureZoneExists()
-
-            // Push local changes first so cloud has the latest before reconciliation
-            await pushAllToCloud()
-            await pushDeletions()
-
-            // Apply remote deletions via tombstones
-            await fetchRemoteTombstones()
-
-            // Then fetch from cloud
-            try await fetchTrailers(context: modelContext!)
-            try await fetchVehicles(context: modelContext!)
-            try await fetchChecklists(context: modelContext!)
-            try await fetchChecklistItems(context: modelContext!)
-            try await fetchDriveLogs(context: modelContext!)
-
-            try modelContext!.save()
-
-            report.finishedAt = Date()
-            await MainActor.run { reportStore.lastReport = report }
-
-            print("CloudKit: full sync completed")
-            print("CloudKitSyncService: Full sync completed")
         } catch {
-            print("CloudKitSyncService: Sync error - \(error)")
+            print("CloudKitSyncService: Failed to ensure zone exists - \(error)")
             lastErrorMessage = String(describing: error)
             report.error = lastErrorMessage
             await MainActor.run { reportStore.lastReport = report }
+            return
         }
+
+        // Push local changes first so cloud has the latest before reconciliation
+        await pushAllToCloud()
+        await pushDeletions()
+
+        // Apply remote deletions via tombstones
+        await fetchRemoteTombstones()
+
+        // Then fetch from cloud (each type independently)
+        do { try await fetchTrailers(context: context) } catch { print("CloudKit: fetch trailers error - \(error)") }
+        do { try await fetchVehicles(context: context) } catch { print("CloudKit: fetch vehicles error - \(error)") }
+        do { try await fetchChecklists(context: context) } catch { print("CloudKit: fetch checklists error - \(error)") }
+        do { try await fetchChecklistItems(context: context) } catch { print("CloudKit: fetch checklist items error - \(error)") }
+        do { try await fetchDriveLogs(context: context) } catch { print("CloudKit: fetch drive logs error - \(error)") }
+
+        do {
+            try context.save()
+        } catch {
+            print("CloudKit: failed to save after fetch - \(error)")
+        }
+
+        report.finishedAt = Date()
+        await MainActor.run { reportStore.lastReport = report }
+
+        print("CloudKit: full sync completed")
+        print("CloudKitSyncService: Full sync completed")
     }
 
     /// Fetches all records from CloudKit and imports them locally.
     func fetchAllFromCloud() async {
         guard let context = modelContext else { return }
 
-        do {
-            try await fetchTrailers(context: context)
-            try await fetchVehicles(context: context)
-            try await fetchChecklists(context: context)
-            try await fetchChecklistItems(context: context)
-            try await fetchDriveLogs(context: context)
+        // Fetch each entity type independently - one failure shouldn't stop others
+        do { try await fetchTrailers(context: context) } catch { print("CloudKitSyncService: Fetch trailers error - \(error)") }
+        do { try await fetchVehicles(context: context) } catch { print("CloudKitSyncService: Fetch vehicles error - \(error)") }
+        do { try await fetchChecklists(context: context) } catch { print("CloudKitSyncService: Fetch checklists error - \(error)") }
+        do { try await fetchChecklistItems(context: context) } catch { print("CloudKitSyncService: Fetch checklist items error - \(error)") }
+        do { try await fetchDriveLogs(context: context) } catch { print("CloudKitSyncService: Fetch drive logs error - \(error)") }
 
+        do {
             try context.save()
             print("CloudKitSyncService: Fetch from cloud completed")
         } catch {
-            print("CloudKitSyncService: Fetch error - \(error)")
+            print("CloudKitSyncService: Failed to save after fetch - \(error)")
             lastErrorMessage = String(describing: error)
         }
     }
@@ -184,20 +190,16 @@ final class CloudKitSyncService {
     func pushAllToCloud() async {
         guard let context = modelContext else { return }
 
-        do {
-            try await pushTrailers(context: context)
-            try await pushVehicles(context: context)
-            try await pushChecklists(context: context)
-            try await pushChecklistItems(context: context)
-            try await pushDriveLogs(context: context)
+        // Push each entity type independently - one failure shouldn't stop others
+        do { try await pushTrailers(context: context) } catch { print("CloudKitSyncService: Push trailers error - \(error)") }
+        do { try await pushVehicles(context: context) } catch { print("CloudKitSyncService: Push vehicles error - \(error)") }
+        do { try await pushChecklists(context: context) } catch { print("CloudKitSyncService: Push checklists error - \(error)") }
+        do { try await pushChecklistItems(context: context) } catch { print("CloudKitSyncService: Push checklist items error - \(error)") }
+        do { try await pushDriveLogs(context: context) } catch { print("CloudKitSyncService: Push drive logs error - \(error)") }
 
-            print("CloudKitSyncService: Push to cloud completed")
+        print("CloudKitSyncService: Push to cloud completed")
 
-            await pushDeletions()
-        } catch {
-            print("CloudKitSyncService: Push error - \(error)")
-            lastErrorMessage = String(describing: error)
-        }
+        await pushDeletions()
     }
 
     /// Records a local deletion so it can be pushed to CloudKit.
@@ -217,26 +219,69 @@ final class CloudKitSyncService {
 
     /// Pushes pending deletions to CloudKit and removes tombstones on success.
     func pushDeletions() async {
+        guard let context = modelContext else { return }
+
         do {
-            guard let context = modelContext else { return }
             let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>())
             guard !tombstones.isEmpty else { return }
-            let recordIDsToDelete: [CKRecord.ID] = tombstones.map { ts in
-                let type = mappedRecordType(from: ts.entityType)
-                return CKRecord.ID(recordName: "\(type)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
-            }
+
+            print("CloudKit: pushing \(tombstones.count) deletions …")
+
+            // First, save tombstone records to CloudKit (so other devices know about deletions)
             let tombstoneRecords: [CKRecord] = tombstones.map { tombstoneRecord(for: $0) }
-            let op = CKModifyRecordsOperation(recordsToSave: tombstoneRecords, recordIDsToDelete: recordIDsToDelete)
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                op.modifyRecordsResultBlock = { result in
-                    switch result { case .success: continuation.resume(); case .failure(let error): continuation.resume(throwing: error) }
+
+            let saveOp = CKModifyRecordsOperation(recordsToSave: tombstoneRecords, recordIDsToDelete: nil)
+            saveOp.savePolicy = .allKeys
+            do {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    saveOp.modifyRecordsResultBlock = { result in
+                        switch result {
+                        case .success: continuation.resume()
+                        case .failure(let error): continuation.resume(throwing: error)
+                        }
+                    }
+                    privateDatabase.add(saveOp)
                 }
-                privateDatabase.add(op)
+                print("CloudKit: saved \(tombstoneRecords.count) tombstone records")
+            } catch {
+                print("CloudKit: failed to save tombstone records - \(error)")
             }
-            // Remove local tombstones on success
-            for ts in tombstones { context.delete(ts) }
+
+            // Then, delete the original records from CloudKit
+            // Do this one at a time to handle "record not found" gracefully
+            for ts in tombstones {
+                let type = mappedRecordType(from: ts.entityType)
+                let recordIDToDelete = CKRecord.ID(recordName: "\(type)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
+
+                do {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        privateDatabase.delete(withRecordID: recordIDToDelete) { _, error in
+                            if let error = error as? CKError {
+                                // Ignore "record not found" - it's already deleted or was never synced
+                                if error.code == .unknownItem {
+                                    print("CloudKit: record \(ts.entityType) \(ts.id) not found in cloud (already deleted or never synced)")
+                                    continuation.resume()
+                                    return
+                                }
+                            }
+                            if let error = error {
+                                continuation.resume(throwing: error)
+                            } else {
+                                continuation.resume()
+                            }
+                        }
+                    }
+                } catch {
+                    print("CloudKit: failed to delete \(ts.entityType) \(ts.id) from cloud - \(error)")
+                }
+
+                // Remove local tombstone regardless of cloud deletion result
+                // (the record is deleted locally, and we've notified other devices via tombstone record)
+                context.delete(ts)
+            }
+
             try context.save()
-            print("CloudKit: pushed \(tombstones.count) deletions (with tombstones)")
+            print("CloudKit: processed \(tombstones.count) deletions")
         } catch {
             print("CloudKit: pushDeletions error - \(error)")
         }
@@ -312,7 +357,8 @@ final class CloudKitSyncService {
 
     private func pushVehicles(context: ModelContext) async throws {
         let vehicles = try context.fetch(FetchDescriptor<Vehicle>())
-        print("CloudKit: pushing vehicles …")
+        print("CloudKit: pushing \(vehicles.count) vehicles …")
+        var successCount = 0
 
         for vehicle in vehicles {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
@@ -334,12 +380,17 @@ final class CloudKitSyncService {
                 record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
             }
 
-            try await saveRecord(record)
+            do {
+                try await saveRecord(record)
+                successCount += 1
+            } catch {
+                print("CloudKit: failed to push vehicle \(vehicle.id): \(error)")
+            }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": vehicles.count])
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": successCount])
 
-        print("CloudKit: pushed \(vehicles.count) vehicles")
+        print("CloudKit: pushed \(successCount)/\(vehicles.count) vehicles")
     }
 
     private func fetchVehicles(context: ModelContext) async throws {
@@ -398,7 +449,8 @@ final class CloudKitSyncService {
 
     private func pushTrailers(context: ModelContext) async throws {
         let trailers = try context.fetch(FetchDescriptor<Trailer>())
-        print("CloudKit: pushing trailers …")
+        print("CloudKit: pushing \(trailers.count) trailers …")
+        var successCount = 0
 
         for trailer in trailers {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
@@ -416,18 +468,19 @@ final class CloudKitSyncService {
             }
 
             // Removed linkedVehicle reference to avoid circular dependency
-            /*
-            if let linkedVehicle = trailer.linkedVehicle {
-                record["CD_linkedVehicle"] = referenceID(for: "CD_Vehicle", uuid: linkedVehicle.id)
-            }
-            */
+            // The link is established from Vehicle -> Trailer
 
-            try await saveRecord(record)
+            do {
+                try await saveRecord(record)
+                successCount += 1
+            } catch {
+                print("CloudKit: failed to push trailer \(trailer.id): \(error)")
+            }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": trailers.count])
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": successCount])
 
-        print("CloudKit: pushed \(trailers.count) trailers")
+        print("CloudKit: pushed \(successCount)/\(trailers.count) trailers")
     }
 
     private func fetchTrailers(context: ModelContext) async throws {
@@ -471,7 +524,8 @@ final class CloudKitSyncService {
 
     private func pushDriveLogs(context: ModelContext) async throws {
         let driveLogs = try context.fetch(FetchDescriptor<DriveLog>())
-        print("CloudKit: pushing drive logs …")
+        print("CloudKit: pushing \(driveLogs.count) drive logs …")
+        var successCount = 0
 
         for log in driveLogs {
             let recordID = recordID(for: "CD_DriveLog", uuid: log.id)
@@ -493,12 +547,17 @@ final class CloudKitSyncService {
                 record["CD_checklist"] = referenceID(for: "CD_Checklist", uuid: checklist.id)
             }
 
-            try await saveRecord(record)
+            do {
+                try await saveRecord(record)
+                successCount += 1
+            } catch {
+                print("CloudKit: failed to push drive log \(log.id): \(error)")
+            }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": driveLogs.count])
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": successCount])
 
-        print("CloudKit: pushed \(driveLogs.count) drive logs")
+        print("CloudKit: pushed \(successCount)/\(driveLogs.count) drive logs")
     }
 
     private func fetchDriveLogs(context: ModelContext) async throws {
@@ -561,7 +620,8 @@ final class CloudKitSyncService {
 
     private func pushChecklists(context: ModelContext) async throws {
         let checklists = try context.fetch(FetchDescriptor<Checklist>())
-        print("CloudKit: pushing checklists …")
+        print("CloudKit: pushing \(checklists.count) checklists …")
+        var successCount = 0
 
         for checklist in checklists {
             let recordID = recordID(for: "CD_Checklist", uuid: checklist.id)
@@ -580,12 +640,17 @@ final class CloudKitSyncService {
                 record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
             }
 
-            try await saveRecord(record)
+            do {
+                try await saveRecord(record)
+                successCount += 1
+            } catch {
+                print("CloudKit: failed to push checklist \(checklist.id): \(error)")
+            }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": checklists.count])
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": successCount])
 
-        print("CloudKit: pushed \(checklists.count) checklists")
+        print("CloudKit: pushed \(successCount)/\(checklists.count) checklists")
     }
 
     private func fetchChecklists(context: ModelContext) async throws {
@@ -646,7 +711,8 @@ final class CloudKitSyncService {
 
     private func pushChecklistItems(context: ModelContext) async throws {
         let items = try context.fetch(FetchDescriptor<ChecklistItem>())
-        print("CloudKit: pushing checklist items …")
+        print("CloudKit: pushing \(items.count) checklist items …")
+        var successCount = 0
 
         for item in items {
             let recordID = recordID(for: "CD_ChecklistItem", uuid: item.id)
@@ -662,12 +728,17 @@ final class CloudKitSyncService {
                 record["CD_checklist"] = referenceID(for: "CD_Checklist", uuid: checklist.id)
             }
 
-            try await saveRecord(record)
+            do {
+                try await saveRecord(record)
+                successCount += 1
+            } catch {
+                print("CloudKit: failed to push checklist item \(item.id): \(error)")
+            }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": items.count])
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": successCount])
 
-        print("CloudKit: pushed \(items.count) checklist items")
+        print("CloudKit: pushed \(successCount)/\(items.count) checklist items")
     }
 
     private func fetchChecklistItems(context: ModelContext) async throws {

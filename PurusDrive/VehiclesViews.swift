@@ -276,14 +276,25 @@ struct VehicleFormView: View {
 
     init(vehicle: Vehicle? = nil) {
         self.vehicle = vehicle
-        _type = State(initialValue: vehicle?.type ?? .car)
-        _brandModel = State(initialValue: vehicle?.brandModel ?? "")
-        _color = State(initialValue: vehicle?.color ?? "")
-        _plate = State(initialValue: vehicle?.plate ?? "")
-        _notes = State(initialValue: vehicle?.notes ?? "")
-        _trailer = State(initialValue: vehicle?.trailer)
+        // Safety check: if vehicle was deleted, its modelContext becomes nil
+        // Accessing properties of a deleted SwiftData object can crash
+        guard let vehicle, vehicle.modelContext != nil else {
+            _type = State(initialValue: .car)
+            _brandModel = State(initialValue: "")
+            _color = State(initialValue: "")
+            _plate = State(initialValue: "")
+            _notes = State(initialValue: "")
+            _trailer = State(initialValue: nil)
+            return
+        }
+        _type = State(initialValue: vehicle.type)
+        _brandModel = State(initialValue: vehicle.brandModel)
+        _color = State(initialValue: vehicle.color)
+        _plate = State(initialValue: vehicle.plate)
+        _notes = State(initialValue: vehicle.notes)
+        _trailer = State(initialValue: vehicle.trailer)
 
-        if let data = vehicle?.photoData, let img = UIImage(data: data) {
+        if let data = vehicle.photoData, let img = UIImage(data: data) {
             _carPhoto = State(initialValue: img)
         }
     }
@@ -811,11 +822,19 @@ private struct NewTrailerFormView: View {
     init(existing: Trailer? = nil, onCreate: ((Trailer) -> Void)? = nil) {
         self.existing = existing
         self.onCreate = onCreate
-        _brandModel = State(initialValue: existing?.brandModel ?? "")
-        _color = State(initialValue: existing?.color ?? "")
-        _plate = State(initialValue: existing?.plate ?? "")
-        _notes = State(initialValue: existing?.notes ?? "")
-        if let data = existing?.photoData, let img = UIImage(data: data) {
+        // Safety check: if trailer was deleted, its modelContext becomes nil
+        guard let existing, existing.modelContext != nil else {
+            _brandModel = State(initialValue: "")
+            _color = State(initialValue: "")
+            _plate = State(initialValue: "")
+            _notes = State(initialValue: "")
+            return
+        }
+        _brandModel = State(initialValue: existing.brandModel)
+        _color = State(initialValue: existing.color)
+        _plate = State(initialValue: existing.plate)
+        _notes = State(initialValue: existing.notes)
+        if let data = existing.photoData, let img = UIImage(data: data) {
             _trailerPhoto = State(initialValue: img)
         }
     }
