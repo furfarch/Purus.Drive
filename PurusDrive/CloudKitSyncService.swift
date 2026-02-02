@@ -360,8 +360,8 @@ final class CloudKitSyncService {
     private func pushVehicles(context: ModelContext) async throws {
         let vehicles = try context.fetch(FetchDescriptor<Vehicle>())
         print("CloudKit: pushing \(vehicles.count) vehicles …")
-        var successCount = 0
 
+        var records: [CKRecord] = []
         for vehicle in vehicles {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
             let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
@@ -382,17 +382,17 @@ final class CloudKitSyncService {
                 record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
             }
 
-            do {
-                try await saveRecord(record)
-                successCount += 1
-            } catch {
-                print("CloudKit: failed to push vehicle \(vehicle.id): \(error)")
-            }
+            records.append(record)
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": successCount])
-
-        print("CloudKit: pushed \(successCount)/\(vehicles.count) vehicles")
+        do {
+            try await saveRecordsBatch(records)
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": vehicles.count])
+            print("CloudKit: pushed \(vehicles.count) vehicles")
+        } catch {
+            print("CloudKit: failed to push vehicles batch: \(error)")
+            throw error
+        }
     }
 
     private func fetchVehicles(context: ModelContext) async throws {
@@ -452,8 +452,8 @@ final class CloudKitSyncService {
     private func pushTrailers(context: ModelContext) async throws {
         let trailers = try context.fetch(FetchDescriptor<Trailer>())
         print("CloudKit: pushing \(trailers.count) trailers …")
-        var successCount = 0
 
+        var records: [CKRecord] = []
         for trailer in trailers {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
             let record = CKRecord(recordType: "CD_Trailer", recordID: recordID)
@@ -472,17 +472,17 @@ final class CloudKitSyncService {
             // Removed linkedVehicle reference to avoid circular dependency
             // The link is established from Vehicle -> Trailer
 
-            do {
-                try await saveRecord(record)
-                successCount += 1
-            } catch {
-                print("CloudKit: failed to push trailer \(trailer.id): \(error)")
-            }
+            records.append(record)
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": successCount])
-
-        print("CloudKit: pushed \(successCount)/\(trailers.count) trailers")
+        do {
+            try await saveRecordsBatch(records)
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": trailers.count])
+            print("CloudKit: pushed \(trailers.count) trailers")
+        } catch {
+            print("CloudKit: failed to push trailers batch: \(error)")
+            throw error
+        }
     }
 
     private func fetchTrailers(context: ModelContext) async throws {
@@ -527,8 +527,8 @@ final class CloudKitSyncService {
     private func pushDriveLogs(context: ModelContext) async throws {
         let driveLogs = try context.fetch(FetchDescriptor<DriveLog>())
         print("CloudKit: pushing \(driveLogs.count) drive logs …")
-        var successCount = 0
 
+        var records: [CKRecord] = []
         for log in driveLogs {
             let recordID = recordID(for: "CD_DriveLog", uuid: log.id)
             let record = CKRecord(recordType: "CD_DriveLog", recordID: recordID)
@@ -549,17 +549,17 @@ final class CloudKitSyncService {
                 record["CD_checklist"] = referenceID(for: "CD_Checklist", uuid: checklist.id)
             }
 
-            do {
-                try await saveRecord(record)
-                successCount += 1
-            } catch {
-                print("CloudKit: failed to push drive log \(log.id): \(error)")
-            }
+            records.append(record)
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": successCount])
-
-        print("CloudKit: pushed \(successCount)/\(driveLogs.count) drive logs")
+        do {
+            try await saveRecordsBatch(records)
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": driveLogs.count])
+            print("CloudKit: pushed \(driveLogs.count) drive logs")
+        } catch {
+            print("CloudKit: failed to push drive logs batch: \(error)")
+            throw error
+        }
     }
 
     private func fetchDriveLogs(context: ModelContext) async throws {
@@ -623,8 +623,8 @@ final class CloudKitSyncService {
     private func pushChecklists(context: ModelContext) async throws {
         let checklists = try context.fetch(FetchDescriptor<Checklist>())
         print("CloudKit: pushing \(checklists.count) checklists …")
-        var successCount = 0
 
+        var records: [CKRecord] = []
         for checklist in checklists {
             let recordID = recordID(for: "CD_Checklist", uuid: checklist.id)
             let record = CKRecord(recordType: "CD_Checklist", recordID: recordID)
@@ -642,17 +642,17 @@ final class CloudKitSyncService {
                 record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
             }
 
-            do {
-                try await saveRecord(record)
-                successCount += 1
-            } catch {
-                print("CloudKit: failed to push checklist \(checklist.id): \(error)")
-            }
+            records.append(record)
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": successCount])
-
-        print("CloudKit: pushed \(successCount)/\(checklists.count) checklists")
+        do {
+            try await saveRecordsBatch(records)
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": checklists.count])
+            print("CloudKit: pushed \(checklists.count) checklists")
+        } catch {
+            print("CloudKit: failed to push checklists batch: \(error)")
+            throw error
+        }
     }
 
     private func fetchChecklists(context: ModelContext) async throws {
@@ -714,8 +714,8 @@ final class CloudKitSyncService {
     private func pushChecklistItems(context: ModelContext) async throws {
         let items = try context.fetch(FetchDescriptor<ChecklistItem>())
         print("CloudKit: pushing \(items.count) checklist items …")
-        var successCount = 0
 
+        var records: [CKRecord] = []
         for item in items {
             let recordID = recordID(for: "CD_ChecklistItem", uuid: item.id)
             let record = CKRecord(recordType: "CD_ChecklistItem", recordID: recordID)
@@ -730,17 +730,24 @@ final class CloudKitSyncService {
                 record["CD_checklist"] = referenceID(for: "CD_Checklist", uuid: checklist.id)
             }
 
+            records.append(record)
+        }
+
+        // CloudKit has a limit of 400 records per batch operation
+        // Split into chunks if necessary
+        let chunkSize = 400
+        for chunk in stride(from: 0, to: records.count, by: chunkSize) {
+            let end = min(chunk + chunkSize, records.count)
+            let batch = Array(records[chunk..<end])
             do {
-                try await saveRecord(record)
-                successCount += 1
+                try await saveRecordsBatch(batch)
             } catch {
-                print("CloudKit: failed to push checklist item \(item.id): \(error)")
+                print("CloudKit: failed to push checklist items batch (\(chunk)-\(end)): \(error)")
             }
         }
 
-        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": successCount])
-
-        print("CloudKit: pushed \(successCount)/\(items.count) checklist items")
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": items.count])
+        print("CloudKit: pushed \(items.count) checklist items")
     }
 
     private func fetchChecklistItems(context: ModelContext) async throws {
@@ -786,6 +793,41 @@ final class CloudKitSyncService {
     }
 
     // MARK: - CloudKit Helpers
+
+    /// Saves multiple records in a single batch operation (much faster than individual saves)
+    private func saveRecordsBatch(_ records: [CKRecord]) async throws {
+        guard !records.isEmpty else { return }
+
+        let op = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: nil)
+        op.savePolicy = .allKeys
+        op.isAtomic = false  // Allow partial success - some records may fail but others succeed
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            op.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume()
+                case .failure(let error):
+                    // Check for zone not found error
+                    if let ckError = error as? CKError, ckError.code == .zoneNotFound {
+                        Task {
+                            do {
+                                try await self.ensureZoneExists()
+                                // Retry once after ensuring the zone exists
+                                try await self.saveRecordsBatch(records)
+                                continuation.resume()
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        }
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+            privateDatabase.add(op)
+        }
+    }
 
     private func saveRecord(_ record: CKRecord) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
