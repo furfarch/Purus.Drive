@@ -139,25 +139,28 @@ final class CloudKitSyncService {
             return
         }
 
-        // Push local changes first so cloud has the latest before reconciliation
-        await pushAllToCloud()
-        await pushDeletions()
-
-        // Apply remote deletions via tombstones
+        // 1) Apply remote deletions first so local store is purged before any uploads
         await fetchRemoteTombstones()
 
-        // Then fetch from cloud (each type independently)
+        // 2) Push pending local deletions so other devices learn about them
+        await pushDeletions()
+
+        // 3) Fetch from cloud (each type independently)
         do { try await fetchTrailers(context: context) } catch { print("CloudKit: fetch trailers error - \(error)") }
         do { try await fetchVehicles(context: context) } catch { print("CloudKit: fetch vehicles error - \(error)") }
         do { try await fetchChecklists(context: context) } catch { print("CloudKit: fetch checklists error - \(error)") }
         do { try await fetchChecklistItems(context: context) } catch { print("CloudKit: fetch checklist items error - \(error)") }
         do { try await fetchDriveLogs(context: context) } catch { print("CloudKit: fetch drive logs error - \(error)") }
 
+        // 4) Save local changes after fetch
         do {
             try context.save()
         } catch {
             print("CloudKit: failed to save after fetch - \(error)")
         }
+
+        // 5) Finally, push any remaining local upserts
+        await pushAllToCloud()
 
         report.finishedAt = Date()
         await MainActor.run { reportStore.lastReport = report }
@@ -190,6 +193,9 @@ final class CloudKitSyncService {
     func pushAllToCloud() async {
         guard let context = modelContext else { return }
 
+        // First, push deletions so tombstones win
+        await pushDeletions()
+
         // Push each entity type independently - one failure shouldn't stop others
         do { try await pushTrailers(context: context) } catch { print("CloudKitSyncService: Push trailers error - \(error)") }
         do { try await pushVehicles(context: context) } catch { print("CloudKitSyncService: Push vehicles error - \(error)") }
@@ -198,8 +204,6 @@ final class CloudKitSyncService {
         do { try await pushDriveLogs(context: context) } catch { print("CloudKitSyncService: Push drive logs error - \(error)") }
 
         print("CloudKitSyncService: Push to cloud completed")
-
-        await pushDeletions()
     }
 
     /// Records a local deletion so it can be pushed to CloudKit.
@@ -354,15 +358,23 @@ final class CloudKitSyncService {
     private func referenceID(for type: String, uuid: UUID) -> CKRecord.Reference {
         CKRecord.Reference(recordID: recordID(for: type, uuid: uuid), action: .none)
     }
+    
+    // MARK: - Tombstone Helper
+    
+    private func tombstonedIDs(in context: ModelContext) -> Set<UUID> {
+        (try? context.fetch(FetchDescriptor<DeletedRecord>()))
+            .map { Set($0.map { $0.id }) } ?? []
+    }
 
     // MARK: - Vehicle Sync
 
     private func pushVehicles(context: ModelContext) async throws {
         let vehicles = try context.fetch(FetchDescriptor<Vehicle>())
+        let deleted = tombstonedIDs(in: context)
         print("CloudKit: pushing \(vehicles.count) vehicles …")
 
         var records: [CKRecord] = []
-        for vehicle in vehicles {
+        for vehicle in vehicles.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
             let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
 
@@ -451,10 +463,11 @@ final class CloudKitSyncService {
 
     private func pushTrailers(context: ModelContext) async throws {
         let trailers = try context.fetch(FetchDescriptor<Trailer>())
+        let deleted = tombstonedIDs(in: context)
         print("CloudKit: pushing \(trailers.count) trailers …")
 
         var records: [CKRecord] = []
-        for trailer in trailers {
+        for trailer in trailers.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
             let record = CKRecord(recordType: "CD_Trailer", recordID: recordID)
 
@@ -526,10 +539,11 @@ final class CloudKitSyncService {
 
     private func pushDriveLogs(context: ModelContext) async throws {
         let driveLogs = try context.fetch(FetchDescriptor<DriveLog>())
+        let deleted = tombstonedIDs(in: context)
         print("CloudKit: pushing \(driveLogs.count) drive logs …")
 
         var records: [CKRecord] = []
-        for log in driveLogs {
+        for log in driveLogs.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_DriveLog", uuid: log.id)
             let record = CKRecord(recordType: "CD_DriveLog", recordID: recordID)
 
@@ -622,10 +636,11 @@ final class CloudKitSyncService {
 
     private func pushChecklists(context: ModelContext) async throws {
         let checklists = try context.fetch(FetchDescriptor<Checklist>())
+        let deleted = tombstonedIDs(in: context)
         print("CloudKit: pushing \(checklists.count) checklists …")
 
         var records: [CKRecord] = []
-        for checklist in checklists {
+        for checklist in checklists.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_Checklist", uuid: checklist.id)
             let record = CKRecord(recordType: "CD_Checklist", recordID: recordID)
 
@@ -713,10 +728,11 @@ final class CloudKitSyncService {
 
     private func pushChecklistItems(context: ModelContext) async throws {
         let items = try context.fetch(FetchDescriptor<ChecklistItem>())
+        let deleted = tombstonedIDs(in: context)
         print("CloudKit: pushing \(items.count) checklist items …")
 
         var records: [CKRecord] = []
-        for item in items {
+        for item in items.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_ChecklistItem", uuid: item.id)
             let record = CKRecord(recordType: "CD_ChecklistItem", recordID: recordID)
 

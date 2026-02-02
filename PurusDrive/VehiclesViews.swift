@@ -33,9 +33,101 @@ struct VehiclesListView: View {
             .listRowSeparator(.hidden)
 
             // Unlinked trailers (standalone)
-            ForEach(unlinkedTrailers) { t in
-                // Safety check: skip rendering if trailer was deleted
-                if t.modelContext != nil {
+            ForEach(unlinkedTrailers.filter { $0.modelContext != nil }) { t in
+                NavigationLink {
+                    NewTrailerFormView(existing: t)
+                        .environment(\.modelContext, modelContext)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image("TRAILER_CAR")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundStyle(.primary)
+                            .frame(width: 28, height: 28)
+                            .padding(4)
+                            .background(Color(.tertiarySystemBackground).opacity(0.85))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.brandModel.isEmpty ? "Trailer" : t.brandModel)
+                                .font(.headline)
+                            if !t.plate.isEmpty {
+                                Text(t.plate)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Text(t.lastEdited, style: .time)
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
+                        modelContext.delete(t)
+                        do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
+                    } label: { Label("Delete", systemImage: "trash") }
+                }
+            }
+
+            // Vehicles + their linked trailer directly underneath
+            ForEach(vehicles.filter { $0.modelContext != nil }) { v in
+                NavigationLink {
+                    VehicleFormView(vehicle: v)
+                } label: {
+                    HStack(spacing: 12) {
+                        vehicleIconView(for: v)
+                            .frame(width: 28, height: 28)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
+                                .font(.headline)
+                            Text(v.plate)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            // New: show linked trailer (subtle/indented)
+                            if let t = v.trailer {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "link")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                    Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.leading, 16)
+                            }
+                        }
+
+                        Spacer()
+                        HStack(spacing: 6) {
+                            // mini icons: checklists and logs
+                            if allChecklists.contains(where: { $0.vehicle === v }) || (v.trailer != nil && allChecklists.contains(where: { $0.trailer === v.trailer })) {
+                                Image(systemName: "checklist").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            if allDriveLogs.contains(where: { $0.vehicle === v }) {
+                                Image(systemName: "road.lanes").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        Text(v.lastEdited, style: .time)
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
+                        modelContext.delete(v)
+                        do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
+                        Task { await CloudKitSyncService.shared.pushDeletions() }
+                    } label: { Label("Delete", systemImage: "trash") }
+                }
+
+                if let t = v.trailer, t.modelContext != nil {
                     NavigationLink {
                         NewTrailerFormView(existing: t)
                             .environment(\.modelContext, modelContext)
@@ -46,122 +138,26 @@ struct VehiclesListView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .foregroundStyle(.primary)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 22, height: 22)
                                 .padding(4)
                                 .background(Color(.tertiarySystemBackground).opacity(0.85))
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
+
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(t.brandModel.isEmpty ? "Trailer" : t.brandModel)
-                                    .font(.headline)
+                                    .font(.subheadline)
                                 if !t.plate.isEmpty {
                                     Text(t.plate)
-                                        .font(.subheadline)
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
-                            Spacer()
-                            Text(t.lastEdited, style: .time)
-                                .font(.footnote)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
-                            modelContext.delete(t)
-                            do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
-                            Task { await CloudKitSyncService.shared.pushDeletions() }
-                        } label: { Label("Delete", systemImage: "trash") }
-                    }
-                }
-            }
-
-            // Vehicles + their linked trailer directly underneath
-            ForEach(vehicles) { v in
-                // Safety check: skip rendering if vehicle was deleted (modelContext becomes nil)
-                if v.modelContext != nil {
-                    NavigationLink {
-                        VehicleFormView(vehicle: v)
-                    } label: {
-                        HStack(spacing: 12) {
-                            vehicleIconView(for: v)
-                                .frame(width: 28, height: 28)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
-                                    .font(.headline)
-                                Text(v.plate)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-
-                                // New: show linked trailer (subtle/indented)
-                                if let t = v.trailer {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "link")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
-                                        Text(t.brandModel.isEmpty ? (t.plate.isEmpty ? "Trailer" : t.plate) : t.brandModel)
-                                            .font(.footnote)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.leading, 16)
-                                }
-                            }
 
                             Spacer()
-                            HStack(spacing: 6) {
-                                // mini icons: checklists and logs
-                                let hasChecklists = allChecklists.contains { $0.vehicle === v } || allChecklists.contains { $0.trailer === v.trailer && v.trailer != nil }
-                                let hasLogs = allDriveLogs.contains { $0.vehicle === v }
-                                if hasChecklists { Image(systemName: "checklist").font(.caption2).foregroundStyle(.secondary) }
-                                if hasLogs { Image(systemName: "road.lanes").font(.caption2).foregroundStyle(.secondary) }
-                            }
-                            Text(v.lastEdited, style: .time)
-                                .font(.footnote)
-                                .foregroundStyle(.tertiary)
                         }
+                        .padding(.leading, 40)
                     }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
-                            modelContext.delete(v)
-                            do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
-                            Task { await CloudKitSyncService.shared.pushDeletions() }
-                        } label: { Label("Delete", systemImage: "trash") }
-                    }
-
-                    if let t = v.trailer, t.modelContext != nil {
-                        NavigationLink {
-                            NewTrailerFormView(existing: t)
-                                .environment(\.modelContext, modelContext)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image("TRAILER_CAR")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .foregroundStyle(.primary)
-                                    .frame(width: 22, height: 22)
-                                    .padding(4)
-                                    .background(Color(.tertiarySystemBackground).opacity(0.85))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(t.brandModel.isEmpty ? "Trailer" : t.brandModel)
-                                        .font(.subheadline)
-                                    if !t.plate.isEmpty {
-                                        Text(t.plate)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-                            }
-                            .padding(.leading, 40)
-                        }
-                        .listRowSeparator(.hidden)
-                    }
+                    .listRowSeparator(.hidden)
                 }
             }
         }
@@ -191,38 +187,7 @@ extension VehiclesListView {
                 .opacity(0.85)
         } else {
             // choose base image (either system or asset)
-            let base: Image
-            let needsTemplateTint: Bool
-            switch v.type {
-            case .car:
-                base = Image(systemName: "car")
-                needsTemplateTint = false
-            case .van:
-                base = Image("VAN")
-                needsTemplateTint = true
-            case .truck:
-                base = Image(systemName: "truck.box")
-                needsTemplateTint = false
-            case .trailer:
-                base = Image("TRAILER_CAR")
-                needsTemplateTint = true
-            case .camper:
-                base = Image("CAMPER")
-                needsTemplateTint = true
-            case .boat:
-                base = Image(systemName: "sailboat")
-                needsTemplateTint = false
-            case .motorbike:
-                // prefer asset if present
-                base = Image("MOTORBIKE")
-                needsTemplateTint = true
-            case .scooter:
-                base = Image("SCOOTER")
-                needsTemplateTint = true
-            case .other:
-                base = Image(systemName: "questionmark.circle")
-                needsTemplateTint = false
-            }
+            let (base, needsTemplateTint) = iconBase(for: v.type)
 
             GeometryReader { geo in
                 ZStack {
@@ -256,6 +221,30 @@ extension VehiclesListView {
                     }
                 }
             }
+        }
+    }
+
+    // Helper to choose base image and whether it needs template tinting
+    fileprivate func iconBase(for type: VehicleType) -> (Image, Bool) {
+        switch type {
+        case .car:
+            return (Image(systemName: "car"), false)
+        case .van:
+            return (Image("VAN"), true)
+        case .truck:
+            return (Image(systemName: "truck.box"), false)
+        case .trailer:
+            return (Image("TRAILER_CAR"), true)
+        case .camper:
+            return (Image("CAMPER"), true)
+        case .boat:
+            return (Image(systemName: "sailboat"), false)
+        case .motorbike:
+            return (Image("MOTORBIKE"), true)
+        case .scooter:
+            return (Image("SCOOTER"), true)
+        case .other:
+            return (Image(systemName: "questionmark.circle"), false)
         }
     }
 }
@@ -381,6 +370,8 @@ struct VehicleFormView: View {
                     Label("Add Drive Log", systemImage: "plus")
                 }
             }
+        } else {
+            EmptyView()
         }
     }
 
@@ -438,6 +429,8 @@ struct VehicleFormView: View {
                     Label("Add Checklist", systemImage: "plus")
                 }
             }
+        } else {
+            EmptyView()
         }
     }
 
@@ -551,7 +544,8 @@ struct VehicleFormView: View {
             checklistsSection
 
             Section(footer: Text("Last edited: \(vehicle?.lastEdited ?? .now, style: .date) \(vehicle?.lastEdited ?? .now, style: .time)")) {
-                EmptyView()
+                // Add a zero-height spacer row to satisfy Section's content requirement
+                Color.clear.frame(height: 0.0001)
             }
         }
         .navigationTitle(vehicle == nil ? "New Vehicle" : "Edit Vehicle")
@@ -594,23 +588,29 @@ struct VehicleFormView: View {
             .environment(\.modelContext, modelContext)
         }
         .fullScreenCover(isPresented: $showingNewDriveLog) {
-            if let vehicle {
-                NavigationStack {
-                    if newDriveLogToEdit == nil {
-                        ProgressView()
-                            .onAppear {
-                                let new = DriveLog(vehicle: vehicle)
-                                modelContext.insert(new)
-                                do { try modelContext.save() } catch { print("ERROR: failed inserting new drive log: \(error)") }
-                                Task { await CloudKitSyncService.shared.pushAllToCloud() }
-                                newDriveLogToEdit = new
-                            }
-                    } else if let newDriveLogToEdit {
-                        DriveLogEditorView(log: newDriveLogToEdit, isNew: true, lockVehicle: true)
+            Group {
+                if let vehicle {
+                    NavigationStack {
+                        if newDriveLogToEdit == nil {
+                            ProgressView()
+                                .onAppear {
+                                    let new = DriveLog(vehicle: vehicle)
+                                    modelContext.insert(new)
+                                    do { try modelContext.save() } catch { print("ERROR: failed inserting new drive log: \(error)") }
+                                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                                    newDriveLogToEdit = new
+                                }
+                        } else if let newDriveLogToEdit {
+                            DriveLogEditorView(log: newDriveLogToEdit, isNew: true, lockVehicle: true)
+                        } else {
+                            EmptyView()
+                        }
                     }
+                    .environment(\.modelContext, modelContext)
+                    .onDisappear { newDriveLogToEdit = nil }
+                } else {
+                    EmptyView()
                 }
-                .environment(\.modelContext, modelContext)
-                .onDisappear { newDriveLogToEdit = nil }
             }
         }
     }
