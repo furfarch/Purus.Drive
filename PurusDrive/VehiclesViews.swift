@@ -69,6 +69,7 @@ struct VehiclesListView: View {
                         modelContext.delete(t)
                         do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
                         Task { await CloudKitSyncService.shared.pushDeletions() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     } label: { Label("Delete", systemImage: "trash") }
                 }
             }
@@ -124,6 +125,7 @@ struct VehiclesListView: View {
                         modelContext.delete(v)
                         do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
                         Task { await CloudKitSyncService.shared.pushDeletions() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     } label: { Label("Delete", systemImage: "trash") }
                 }
 
@@ -359,6 +361,7 @@ struct VehicleFormView: View {
                                 modelContext.delete(log)
                                 do { try modelContext.save() } catch { print("ERROR: failed deleting drive log: \(error)") }
                                 Task { await CloudKitSyncService.shared.pushDeletions() }
+                                NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -403,6 +406,7 @@ struct VehicleFormView: View {
                                 modelContext.delete(cl)
                                 do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
                                 Task { await CloudKitSyncService.shared.pushDeletions() }
+                                NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -424,6 +428,7 @@ struct VehicleFormView: View {
                     modelContext.insert(new)
                     do { try modelContext.save() } catch { print("ERROR: failed saving new checklist: \(error)") }
                     Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     newChecklistToEdit = new
                 } label: {
                     Label("Add Checklist", systemImage: "plus")
@@ -559,6 +564,7 @@ struct VehicleFormView: View {
                         modelContext.delete(vehicle)
                         try? modelContext.save()
                         Task { await CloudKitSyncService.shared.pushDeletions() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         dismiss()
                     } label: {
                         Image(systemName: "trash")
@@ -598,6 +604,7 @@ struct VehicleFormView: View {
                                     modelContext.insert(new)
                                     do { try modelContext.save() } catch { print("ERROR: failed inserting new drive log: \(error)") }
                                     Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                                     newDriveLogToEdit = new
                                 }
                         } else if let newDriveLogToEdit {
@@ -657,6 +664,8 @@ struct VehicleFormView: View {
                     modelContext.insert(newTrailer)
                     modelContext.delete(vehicle)
                     try modelContext.save()
+                    // Request immediate sync after converting vehicle to trailer
+                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     dismiss()
                     return
                 }
@@ -693,6 +702,7 @@ struct VehicleFormView: View {
                     vehicle.photoData = data
                 }
                 try modelContext.save()
+                NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
             } else {
                 // When type is .trailer, create a Trailer entity instead of a Vehicle
                 // so it can be linked to other vehicles later.
@@ -703,6 +713,7 @@ struct VehicleFormView: View {
                     }
                     modelContext.insert(newTrailer)
                     try modelContext.save()
+                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                 } else {
                     // Resolve selected trailer to managed instance for the new vehicle
                     var managedTrailer: Trailer? = nil
@@ -725,6 +736,7 @@ struct VehicleFormView: View {
                     }
                     modelContext.insert(new)
                     try modelContext.save()
+                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                 }
             }
 
@@ -805,6 +817,7 @@ struct TrailerPickerInline: View {
                         modelContext.insert(newTrailer)
                         selection = newTrailer
                         do { try modelContext.save() } catch { print("ERROR: failed saving new trailer: \(error)") }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         // Force view refresh so the Picker shows the newly inserted trailer immediately.
                         refreshID = UUID()
                         showingNewTrailer = false
@@ -925,6 +938,7 @@ private struct NewTrailerFormView: View {
                         modelContext.insert(new)
                         try? modelContext.save()
                         Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         newChecklistToEdit = new
                     } label: {
                         Label("Add Checklist", systemImage: "plus")
@@ -943,6 +957,7 @@ private struct NewTrailerFormView: View {
                         modelContext.delete(existing)
                         try? modelContext.save()
                         Task { await CloudKitSyncService.shared.pushDeletions() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         dismiss()
                     } label: {
                         Image(systemName: "trash")
@@ -965,6 +980,7 @@ private struct NewTrailerFormView: View {
                         try? modelContext.save()
                         // Trigger CloudKit sync after save
                         Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         dismiss()
                     } else {
                         let t = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: .now)
@@ -974,6 +990,7 @@ private struct NewTrailerFormView: View {
                         onCreate?(t)
                         // Trigger CloudKit sync after save
                         Task { await CloudKitSyncService.shared.pushAllToCloud() }
+                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                         dismiss()
                     }
                 } label: {

@@ -225,6 +225,9 @@ final class CloudKitSyncService {
     func pushDeletions() async {
         guard let context = modelContext else { return }
 
+        // Ensure the custom zone exists so tombstones can be saved reliably
+        do { try await ensureZoneExists() } catch { print("CloudKit: ensureZoneExists failed before pushDeletions - \(error)") }
+
         do {
             let tombstones = try context.fetch(FetchDescriptor<DeletedRecord>())
             guard !tombstones.isEmpty else { return }
@@ -359,6 +362,18 @@ final class CloudKitSyncService {
         CKRecord.Reference(recordID: recordID(for: type, uuid: uuid), action: .none)
     }
     
+    // MARK: - Asset Helpers
+    private func makeAsset(from data: Data, named name: String) throws -> (CKAsset, URL) {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("PD_Asset_\(name)_\(UUID().uuidString).dat")
+        try data.write(to: tmp, options: .atomic)
+        return (CKAsset(fileURL: tmp), tmp)
+    }
+
+    private func data(from asset: CKAsset) -> Data? {
+        guard let url = asset.fileURL else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
     // MARK: - Tombstone Helper
     
     private func tombstonedIDs(in context: ModelContext) -> Set<UUID> {
@@ -374,6 +389,7 @@ final class CloudKitSyncService {
         print("CloudKit: pushing \(vehicles.count) vehicles …")
 
         var records: [CKRecord] = []
+        var tempAssetURLs: [URL] = []
         for vehicle in vehicles.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
             let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
@@ -386,8 +402,10 @@ final class CloudKitSyncService {
             record["CD_notes"] = vehicle.notes
             record["CD_lastEdited"] = vehicle.lastEdited
 
-            if let photoData = vehicle.photoData {
-                record["CD_photoData"] = photoData
+            if let photoData = vehicle.photoData, let assetPair = try? makeAsset(from: photoData, named: "vehicle_\(vehicle.id.uuidString)") {
+                let (asset, url) = assetPair
+                record["CD_photoData"] = asset
+                tempAssetURLs.append(url)
             }
 
             if let trailer = vehicle.trailer {
@@ -399,6 +417,8 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
+            // Clean up temporary files used for CKAssets
+            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
             NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": vehicles.count])
             print("CloudKit: pushed \(vehicles.count) vehicles")
         } catch {
@@ -410,12 +430,16 @@ final class CloudKitSyncService {
     private func fetchVehicles(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Vehicle", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        let deletedIDs = tombstonedIDs(in: context)
         NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Vehicles", "count": records.count])
         print("CloudKit: fetched \(records.count) Vehicles")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
+            
+            // If this id is tombstoned locally, skip importing it
+            if deletedIDs.contains(uuid) { continue }
 
             // Check if vehicle exists locally
             let descriptor = FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == uuid })
@@ -439,7 +463,11 @@ final class CloudKitSyncService {
                 vehicle.color = record["CD_color"] as? String ?? ""
                 vehicle.plate = record["CD_plate"] as? String ?? ""
                 vehicle.notes = record["CD_notes"] as? String ?? ""
-                vehicle.photoData = record["CD_photoData"] as? Data
+                if let asset = record["CD_photoData"] as? CKAsset {
+                    vehicle.photoData = data(from: asset)
+                } else {
+                    vehicle.photoData = nil
+                }
                 if let lastEdited = record["CD_lastEdited"] as? Date {
                     vehicle.lastEdited = lastEdited
                 }
@@ -467,6 +495,7 @@ final class CloudKitSyncService {
         print("CloudKit: pushing \(trailers.count) trailers …")
 
         var records: [CKRecord] = []
+        var tempAssetURLs: [URL] = []
         for trailer in trailers.filter({ !deleted.contains($0.id) }) {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
             let record = CKRecord(recordType: "CD_Trailer", recordID: recordID)
@@ -478,8 +507,10 @@ final class CloudKitSyncService {
             record["CD_notes"] = trailer.notes
             record["CD_lastEdited"] = trailer.lastEdited
 
-            if let photoData = trailer.photoData {
-                record["CD_photoData"] = photoData
+            if let photoData = trailer.photoData, let assetPair = try? makeAsset(from: photoData, named: "trailer_\(trailer.id.uuidString)") {
+                let (asset, url) = assetPair
+                record["CD_photoData"] = asset
+                tempAssetURLs.append(url)
             }
 
             // Removed linkedVehicle reference to avoid circular dependency
@@ -490,6 +521,8 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
+            // Clean up temporary files used for CKAssets
+            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
             NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": trailers.count])
             print("CloudKit: pushed \(trailers.count) trailers")
         } catch {
@@ -501,12 +534,15 @@ final class CloudKitSyncService {
     private func fetchTrailers(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Trailer", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        let deletedIDs = tombstonedIDs(in: context)
         NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Trailers", "count": records.count])
         print("CloudKit: fetched \(records.count) Trailers")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
+            
+            if deletedIDs.contains(uuid) { continue }
 
             let descriptor = FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -525,7 +561,11 @@ final class CloudKitSyncService {
                 trailer.color = record["CD_color"] as? String ?? ""
                 trailer.plate = record["CD_plate"] as? String ?? ""
                 trailer.notes = record["CD_notes"] as? String ?? ""
-                trailer.photoData = record["CD_photoData"] as? Data
+                if let asset = record["CD_photoData"] as? CKAsset {
+                    trailer.photoData = data(from: asset)
+                } else {
+                    trailer.photoData = nil
+                }
                 if let lastEdited = record["CD_lastEdited"] as? Date {
                     trailer.lastEdited = lastEdited
                 }
