@@ -251,7 +251,9 @@ final class CloudKitSyncService {
             // Do this one at a time to handle "record not found" gracefully
             for ts in tombstones {
                 let type = mappedRecordType(from: ts.entityType)
-                let recordIDToDelete = CKRecord.ID(recordName: "\(type)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
+                let tsId = ts.id
+                let tsEntityType = ts.entityType
+                let recordIDToDelete = CKRecord.ID(recordName: "\(type)_\(tsId.uuidString)", zoneID: recordZone.zoneID)
 
                 do {
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -259,7 +261,7 @@ final class CloudKitSyncService {
                             if let error = error as? CKError {
                                 // Ignore "record not found" - it's already deleted or was never synced
                                 if error.code == .unknownItem {
-                                    print("CloudKit: record \(ts.entityType) \(ts.id) not found in cloud (already deleted or never synced)")
+                                    print("CloudKit: record \(tsEntityType) \(tsId) not found in cloud (already deleted or never synced)")
                                     continuation.resume()
                                     return
                                 }
@@ -272,7 +274,7 @@ final class CloudKitSyncService {
                         }
                     }
                 } catch {
-                    print("CloudKit: failed to delete \(ts.entityType) \(ts.id) from cloud - \(error)")
+                    print("CloudKit: failed to delete \(tsEntityType) \(tsId) from cloud - \(error)")
                 }
 
                 // Remove local tombstone regardless of cloud deletion result
