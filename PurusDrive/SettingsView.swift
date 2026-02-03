@@ -238,6 +238,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+#if false
             Section("About") {
                 LabeledContent("Version") {
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
@@ -255,11 +256,13 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                 }
             }
+#endif
 
             Section {
                 Button("Close") { dismiss() }
             }
 
+#if DEBUG
             // Debug section - shows CloudKit diagnostics
             Section("CloudKit Diagnostics") {
                 LabeledContent("Storage Mode") {
@@ -320,6 +323,7 @@ struct SettingsView: View {
                     UIPasteboard.general.string = diagnostics
                 }
             }
+#endif
         }
         .navigationTitle("Settings")
         .onAppear { cloudStatus.refresh() }

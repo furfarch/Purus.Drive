@@ -69,7 +69,7 @@ final class CloudKitSyncService {
     }
 
     private func tombstoneRecord(for ts: DeletedRecord) -> CKRecord {
-        let recID = CKRecord.ID(recordName: "CD_Deleted_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
+        let recID = CKRecord.ID(recordName: "CD_Deleted_\(ts.entityType)_\(ts.id.uuidString)", zoneID: recordZone.zoneID)
         let rec = CKRecord(recordType: "CD_Deleted", recordID: recID)
         rec["entityType"] = ts.entityType
         rec["entityID"] = ts.id.uuidString
@@ -139,13 +139,15 @@ final class CloudKitSyncService {
             return
         }
 
-        // 1) Apply remote deletions first so local store is purged before any uploads
-        await fetchRemoteTombstones()
-
-        // 2) Push pending local deletions so other devices learn about them
+        // 1) CRITICAL: Push pending local deletions FIRST so other devices learn about them
+        //    This must happen before fetching to prevent deleted items from reappearing
         await pushDeletions()
 
+        // 2) Apply remote deletions so local store is purged
+        await fetchRemoteTombstones()
+
         // 3) Fetch from cloud (each type independently)
+        //    Deleted items are now filtered out via tombstonedIDs
         do { try await fetchTrailers(context: context) } catch { print("CloudKit: fetch trailers error - \(error)") }
         do { try await fetchVehicles(context: context) } catch { print("CloudKit: fetch vehicles error - \(error)") }
         do { try await fetchChecklists(context: context) } catch { print("CloudKit: fetch checklists error - \(error)") }
@@ -161,6 +163,9 @@ final class CloudKitSyncService {
 
         // 5) Finally, push any remaining local upserts
         await pushAllToCloud()
+
+        // 6) Final deletion push in case any tombstones were created during the sync
+        await pushDeletions()
 
         report.finishedAt = Date()
         await MainActor.run { reportStore.lastReport = report }
@@ -193,6 +198,8 @@ final class CloudKitSyncService {
     func pushAllToCloud() async {
         guard let context = modelContext else { return }
 
+        do { try await ensureZoneExists() } catch { print("CloudKit: ensureZoneExists failed before pushAllToCloud - \(error)") }
+
         // First, push deletions so tombstones win
         await pushDeletions()
 
@@ -207,7 +214,8 @@ final class CloudKitSyncService {
     }
 
     /// Records a local deletion so it can be pushed to CloudKit.
-    func markDeleted(entityType: String, id: UUID) {
+    /// If immediate sync is enabled and in iCloud mode, triggers an automatic sync.
+    func markDeleted(entityType: String, id: UUID, cascade: Bool = true, autoSync: Bool = true) {
         guard let context = modelContext else { return }
         // Upsert: avoid duplicate unique id constraint
         if let fetched = try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == id })),
@@ -218,7 +226,77 @@ final class CloudKitSyncService {
             let tombstone = DeletedRecord(entityType: entityType, id: id, deletedAt: .now)
             context.insert(tombstone)
         }
-        do { try context.save() } catch { print("CloudKit: failed saving tombstone: \(error)") }
+
+        if cascade {
+            // Cascade tombstones for related entities so CloudKit deletes them as well
+            switch entityType {
+            case "Vehicle":
+                if let v = try? context.fetch(FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == id })).first {
+                    if let logs = v.driveLogs {
+                        for l in logs {
+                            let lid = l.id
+                            if (try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == lid })).first) == nil {
+                                let ts = DeletedRecord(entityType: "DriveLog", id: lid, deletedAt: .now)
+                                context.insert(ts)
+                            }
+                        }
+                    }
+                    if let cls = v.checklists {
+                        for c in cls {
+                            let cid = c.id
+                            if (try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == cid })).first) == nil {
+                                let ts = DeletedRecord(entityType: "Checklist", id: cid, deletedAt: .now)
+                                context.insert(ts)
+                            }
+                            // Also tombstone checklist items
+                            for i in (c.items ?? []) {
+                                let iid = i.id
+                                if (try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == iid })).first) == nil {
+                                    let its = DeletedRecord(entityType: "ChecklistItem", id: iid, deletedAt: .now)
+                                    context.insert(its)
+                                }
+                            }
+                        }
+                    }
+                }
+            case "Trailer":
+                if let t = try? context.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == id })).first {
+                    if let cls = t.checklists {
+                        for c in cls {
+                            let cid = c.id
+                            if (try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == cid })).first) == nil {
+                                let ts = DeletedRecord(entityType: "Checklist", id: cid, deletedAt: .now)
+                                context.insert(ts)
+                            }
+                            for i in (c.items ?? []) {
+                                let iid = i.id
+                                if (try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == iid })).first) == nil {
+                                    let its = DeletedRecord(entityType: "ChecklistItem", id: iid, deletedAt: .now)
+                                    context.insert(its)
+                                }
+                            }
+                        }
+                    }
+                }
+            default:
+                break
+            }
+        }
+
+        do { try context.save() } catch { print("CloudKit: failed saving tombstone(s): \(error)") }
+
+        // Trigger automatic deletion sync if enabled and in iCloud mode
+        if autoSync {
+            let storageRaw = UserDefaults.standard.string(forKey: "storageLocation") ?? "local"
+            if storageRaw == "icloud" {
+                Task { @MainActor in
+                    print("CloudKit: auto-syncing deletion of \(entityType) \(id)")
+                    await self.pushDeletions()
+                    // Also trigger a notification so UI can update
+                    NotificationCenter.default.post(name: Notification.Name("DeletionSyncedNotification"), object: nil, userInfo: ["entityType": entityType, "id": id])
+                }
+            }
+        }
     }
 
     /// Pushes pending deletions to CloudKit and removes tombstones on success.
@@ -237,21 +315,28 @@ final class CloudKitSyncService {
             // First, save tombstone records to CloudKit (so other devices know about deletions)
             let tombstoneRecords: [CKRecord] = tombstones.map { tombstoneRecord(for: $0) }
 
+            var savedTombstonesToCloud = false
+
             let saveOp = CKModifyRecordsOperation(recordsToSave: tombstoneRecords, recordIDsToDelete: nil)
             saveOp.savePolicy = .allKeys
             do {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     saveOp.modifyRecordsResultBlock = { result in
                         switch result {
-                        case .success: continuation.resume()
-                        case .failure(let error): continuation.resume(throwing: error)
+                        case .success:
+                            continuation.resume()
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
                         }
                     }
                     privateDatabase.add(saveOp)
                 }
                 print("CloudKit: saved \(tombstoneRecords.count) tombstone records")
+                savedTombstonesToCloud = true
             } catch {
                 print("CloudKit: failed to save tombstone records - \(error)")
+                // Do not proceed with deleting cloud records or removing local tombstones; try again later
+                return
             }
 
             // Then, delete the original records from CloudKit
@@ -284,9 +369,10 @@ final class CloudKitSyncService {
                     print("CloudKit: failed to delete \(tsEntityType) \(tsId) from cloud - \(error)")
                 }
 
-                // Remove local tombstone regardless of cloud deletion result
-                // (the record is deleted locally, and we've notified other devices via tombstone record)
-                context.delete(ts)
+                // Remove local tombstone only if we successfully saved tombstones to CloudKit
+                if savedTombstonesToCloud {
+                    context.delete(ts)
+                }
             }
 
             try context.save()
@@ -386,11 +472,12 @@ final class CloudKitSyncService {
     private func pushVehicles(context: ModelContext) async throws {
         let vehicles = try context.fetch(FetchDescriptor<Vehicle>())
         let deleted = tombstonedIDs(in: context)
-        print("CloudKit: pushing \(vehicles.count) vehicles …")
+        let activeVehicles = vehicles.filter { !deleted.contains($0.id) }
+        print("CloudKit: pushing \(activeVehicles.count) vehicles …")
+        var tempAssetURLs: [URL] = []
 
         var records: [CKRecord] = []
-        var tempAssetURLs: [URL] = []
-        for vehicle in vehicles.filter({ !deleted.contains($0.id) }) {
+        for vehicle in activeVehicles {
             let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
             let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
 
@@ -402,10 +489,19 @@ final class CloudKitSyncService {
             record["CD_notes"] = vehicle.notes
             record["CD_lastEdited"] = vehicle.lastEdited
 
-            if let photoData = vehicle.photoData, let assetPair = try? makeAsset(from: photoData, named: "vehicle_\(vehicle.id.uuidString)") {
-                let (asset, url) = assetPair
-                record["CD_photoData"] = asset
-                tempAssetURLs.append(url)
+            // Try to include photos via both methods for maximum compatibility
+            if let photoData = vehicle.photoData {
+                // Method 1: CKAsset for larger files (preferred, supports photos > 1MB)
+                if let (asset, url) = try? makeAsset(from: photoData, named: "vehicle_\(vehicle.id.uuidString)") {
+                    record["CD_photoAsset"] = asset
+                    tempAssetURLs.append(url)
+                    print("CloudKit: prepared photo asset for vehicle \(vehicle.id) (\(photoData.count) bytes)")
+                }
+                // Method 2: Inline data for smaller files (fallback, max ~900KB)
+                if photoData.count <= 900_000 {
+                    record["CD_photoData"] = photoData
+                    print("CloudKit: prepared inline photo for vehicle \(vehicle.id) (\(photoData.count) bytes)")
+                }
             }
 
             if let trailer = vehicle.trailer {
@@ -417,12 +513,14 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
-            // Clean up temporary files used for CKAssets
             for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": vehicles.count])
-            print("CloudKit: pushed \(vehicles.count) vehicles")
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": activeVehicles.count])
+            print("CloudKit: successfully pushed \(activeVehicles.count) vehicles with photos")
         } catch {
-            print("CloudKit: failed to push vehicles batch: \(error)")
+            // Clean up temp files even on failure
+            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
+            print("CloudKit: vehicles push failed (\(error))")
+            // Re-throw to allow caller to handle the error
             throw error
         }
     }
@@ -438,7 +536,6 @@ final class CloudKitSyncService {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
             
-            // If this id is tombstoned locally, skip importing it
             if deletedIDs.contains(uuid) { continue }
 
             // Check if vehicle exists locally
@@ -463,8 +560,10 @@ final class CloudKitSyncService {
                 vehicle.color = record["CD_color"] as? String ?? ""
                 vehicle.plate = record["CD_plate"] as? String ?? ""
                 vehicle.notes = record["CD_notes"] as? String ?? ""
-                if let asset = record["CD_photoData"] as? CKAsset {
-                    vehicle.photoData = data(from: asset)
+                if let asset = record["CD_photoAsset"] as? CKAsset, let bytes = data(from: asset) {
+                    vehicle.photoData = bytes
+                } else if let bytes = record["CD_photoData"] as? Data {
+                    vehicle.photoData = bytes
                 } else {
                     vehicle.photoData = nil
                 }
@@ -492,11 +591,12 @@ final class CloudKitSyncService {
     private func pushTrailers(context: ModelContext) async throws {
         let trailers = try context.fetch(FetchDescriptor<Trailer>())
         let deleted = tombstonedIDs(in: context)
-        print("CloudKit: pushing \(trailers.count) trailers …")
+        let activeTrailers = trailers.filter { !deleted.contains($0.id) }
+        print("CloudKit: pushing \(activeTrailers.count) trailers …")
+        var tempAssetURLs: [URL] = []
 
         var records: [CKRecord] = []
-        var tempAssetURLs: [URL] = []
-        for trailer in trailers.filter({ !deleted.contains($0.id) }) {
+        for trailer in activeTrailers {
             let recordID = recordID(for: "CD_Trailer", uuid: trailer.id)
             let record = CKRecord(recordType: "CD_Trailer", recordID: recordID)
 
@@ -507,10 +607,19 @@ final class CloudKitSyncService {
             record["CD_notes"] = trailer.notes
             record["CD_lastEdited"] = trailer.lastEdited
 
-            if let photoData = trailer.photoData, let assetPair = try? makeAsset(from: photoData, named: "trailer_\(trailer.id.uuidString)") {
-                let (asset, url) = assetPair
-                record["CD_photoData"] = asset
-                tempAssetURLs.append(url)
+            // Try to include photos via both methods for maximum compatibility
+            if let photoData = trailer.photoData {
+                // Method 1: CKAsset for larger files (preferred)
+                if let (asset, url) = try? makeAsset(from: photoData, named: "trailer_\(trailer.id.uuidString)") {
+                    record["CD_photoAsset"] = asset
+                    tempAssetURLs.append(url)
+                    print("CloudKit: prepared photo asset for trailer \(trailer.id) (\(photoData.count) bytes)")
+                }
+                // Method 2: Inline data for smaller files (fallback)
+                if photoData.count <= 900_000 {
+                    record["CD_photoData"] = photoData
+                    print("CloudKit: prepared inline photo for trailer \(trailer.id) (\(photoData.count) bytes)")
+                }
             }
 
             // Removed linkedVehicle reference to avoid circular dependency
@@ -521,12 +630,14 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
-            // Clean up temporary files used for CKAssets
             for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": trailers.count])
-            print("CloudKit: pushed \(trailers.count) trailers")
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": activeTrailers.count])
+            print("CloudKit: successfully pushed \(activeTrailers.count) trailers with photos")
         } catch {
-            print("CloudKit: failed to push trailers batch: \(error)")
+            // Clean up temp files even on failure
+            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
+            print("CloudKit: trailers push failed (\(error))")
+            // Re-throw to allow caller to handle the error
             throw error
         }
     }
@@ -561,8 +672,10 @@ final class CloudKitSyncService {
                 trailer.color = record["CD_color"] as? String ?? ""
                 trailer.plate = record["CD_plate"] as? String ?? ""
                 trailer.notes = record["CD_notes"] as? String ?? ""
-                if let asset = record["CD_photoData"] as? CKAsset {
-                    trailer.photoData = data(from: asset)
+                if let asset = record["CD_photoAsset"] as? CKAsset, let bytes = data(from: asset) {
+                    trailer.photoData = bytes
+                } else if let bytes = record["CD_photoData"] as? Data {
+                    trailer.photoData = bytes
                 } else {
                     trailer.photoData = nil
                 }
@@ -619,12 +732,15 @@ final class CloudKitSyncService {
     private func fetchDriveLogs(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_DriveLog", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        let deletedIDs = tombstonedIDs(in: context)
         NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "DriveLogs", "count": records.count])
         print("CloudKit: fetched \(records.count) DriveLogs")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
+
+            if deletedIDs.contains(uuid) { continue }
 
             let descriptor = FetchDescriptor<DriveLog>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -713,12 +829,15 @@ final class CloudKitSyncService {
     private func fetchChecklists(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_Checklist", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        let deletedIDs = tombstonedIDs(in: context)
         NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "Checklists", "count": records.count])
         print("CloudKit: fetched \(records.count) Checklists")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
+
+            if deletedIDs.contains(uuid) { continue }
 
             let descriptor = FetchDescriptor<Checklist>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -731,7 +850,7 @@ final class CloudKitSyncService {
 
             let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
             if existing != nil && checklist.lastEdited >= cloudLastEdited {
-                // Skip overwrite
+                // Skip overwrite but still update relationships below
             } else {
                 if let typeString = record["CD_vehicleType"] as? String,
                    let type = VehicleType(rawValue: typeString) {
@@ -743,21 +862,49 @@ final class CloudKitSyncService {
                 }
             }
 
-            // Link to vehicle/trailer
+            // IMPORTANT: Only link to vehicle/trailer if the reference exists in CloudKit
+            // Clear any existing relationships first to prevent phantom attachments
+            var hasVehicleReference = false
+            var hasTrailerReference = false
+
             if let vehicleRef = record["CD_vehicle"] as? CKRecord.Reference {
+                hasVehicleReference = true
                 let vehicleUUID = extractUUID(from: vehicleRef.recordID.recordName, prefix: "CD_Vehicle_")
                 if let vUUID = vehicleUUID {
                     let vDesc = FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == vUUID })
-                    checklist.vehicle = try context.fetch(vDesc).first
+                    if let vehicle = try context.fetch(vDesc).first {
+                        checklist.vehicle = vehicle
+                    } else {
+                        // Referenced vehicle doesn't exist locally - could be deleted or not synced yet
+                        checklist.vehicle = nil
+                        print("CloudKit: checklist \(uuid) references non-existent vehicle \(vUUID)")
+                    }
                 }
             }
 
             if let trailerRef = record["CD_trailer"] as? CKRecord.Reference {
+                hasTrailerReference = true
                 let trailerUUID = extractUUID(from: trailerRef.recordID.recordName, prefix: "CD_Trailer_")
                 if let tUUID = trailerUUID {
                     let tDesc = FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == tUUID })
-                    checklist.trailer = try context.fetch(tDesc).first
+                    if let trailer = try context.fetch(tDesc).first {
+                        checklist.trailer = trailer
+                    } else {
+                        // Referenced trailer doesn't exist locally - could be deleted or not synced yet
+                        checklist.trailer = nil
+                        print("CloudKit: checklist \(uuid) references non-existent trailer \(tUUID)")
+                    }
                 }
+            }
+
+            // Clear relationships that shouldn't exist based on CloudKit data
+            if !hasVehicleReference && checklist.vehicle != nil {
+                print("CloudKit: clearing phantom vehicle link from checklist \(uuid)")
+                checklist.vehicle = nil
+            }
+            if !hasTrailerReference && checklist.trailer != nil {
+                print("CloudKit: clearing phantom trailer link from checklist \(uuid)")
+                checklist.trailer = nil
             }
         }
         // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
@@ -809,12 +956,15 @@ final class CloudKitSyncService {
     private func fetchChecklistItems(context: ModelContext) async throws {
         let query = CKQuery(recordType: "CD_ChecklistItem", predicate: NSPredicate(value: true))
         let records = try await fetchRecords(query: query)
+        let deletedIDs = tombstonedIDs(in: context)
         NotificationCenter.default.post(name: .syncFetchedCount, object: nil, userInfo: ["type": "ChecklistItems", "count": records.count])
         print("CloudKit: fetched \(records.count) ChecklistItems")
 
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
+
+            if deletedIDs.contains(uuid) { continue }
 
             let descriptor = FetchDescriptor<ChecklistItem>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -858,12 +1008,30 @@ final class CloudKitSyncService {
         op.savePolicy = .allKeys
         op.isAtomic = false  // Allow partial success - some records may fail but others succeed
 
+        op.perRecordSaveBlock = { recordID, result in
+            switch result {
+            case .success:
+                break
+            case .failure(let error):
+                if let ckError = error as? CKError {
+                    print("CloudKit per-record save error for \(recordID.recordName): \(ckError.code) - \(ckError.localizedDescription)")
+                } else {
+                    print("CloudKit per-record save error for \(recordID.recordName): \(error)")
+                }
+            }
+        }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             op.modifyRecordsResultBlock = { result in
                 switch result {
                 case .success:
                     continuation.resume()
                 case .failure(let error):
+                    if let ckError = error as? CKError {
+                        print("CloudKit saveRecordsBatch error: \(ckError.code) - \(ckError.localizedDescription)")
+                    } else {
+                        print("CloudKit saveRecordsBatch error: \(error)")
+                    }
                     // Check for zone not found error
                     if let ckError = error as? CKError, ckError.code == .zoneNotFound {
                         Task {

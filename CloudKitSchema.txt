@@ -1,0 +1,62 @@
+DEFINE SCHEMA
+
+    RECORD TYPE CD_Checklist (
+        CD_id           STRING,
+        CD_lastEdited   TIMESTAMP,
+        CD_title        STRING,
+        CD_trailer      REFERENCE,
+        CD_vehicle      REFERENCE,
+        CD_vehicleType  STRING
+    );
+
+    RECORD TYPE CD_ChecklistItem (
+        CD_checklist    REFERENCE,
+        CD_id           STRING,
+        CD_note         STRING,
+        CD_section      STRING,
+        CD_state        STRING,
+        CD_title        STRING
+    );
+
+    RECORD TYPE CD_DriveLog (
+        CD_checklist    REFERENCE,
+        CD_date         TIMESTAMP,
+        CD_id           STRING,
+        CD_kmEnd        INT64,
+        CD_kmStart      INT64,
+        CD_lastEdited   TIMESTAMP,
+        CD_notes        STRING,
+        CD_reason       STRING,
+        CD_vehicle      REFERENCE
+    );
+
+    RECORD TYPE CD_Trailer (
+        CD_brandModel    STRING,
+        CD_color         STRING,
+        CD_id            STRING,
+        CD_lastEdited    TIMESTAMP,
+        CD_notes         STRING,
+        CD_photoAsset    ASSET,
+        CD_photoData     BYTES,
+        CD_plate         STRING
+    );
+
+    RECORD TYPE CD_Vehicle (
+        CD_brandModel   STRING,
+        CD_color        STRING,
+        CD_id           STRING,
+        CD_lastEdited   TIMESTAMP,
+        CD_notes        STRING,
+        CD_photoAsset   ASSET,
+        CD_photoData    BYTES,
+        CD_plate        STRING,
+        CD_trailer      REFERENCE,
+        CD_type         STRING
+    );
+
+    RECORD TYPE CD_Deleted (
+        entityType      STRING,
+        entityID        STRING,
+        deletedAt       TIMESTAMP
+    );
+

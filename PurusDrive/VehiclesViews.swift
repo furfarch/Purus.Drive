@@ -330,11 +330,8 @@ struct VehicleFormView: View {
 
     private var checklistsForCurrentVehicle: [Checklist] {
         guard let v = currentVehicle else { return [] }
-        // Prefer new model: checklists belong to the specific vehicle.
-        let direct = allChecklists.filter { $0.vehicle === v }
-        if !direct.isEmpty { return direct }
-        // Backward compatibility: legacy (type-only) checklists.
-        return allChecklists.filter { $0.vehicle == nil && $0.trailer == nil && $0.vehicleType == v.type }
+        // Show only checklists directly attached to this vehicle; do not include legacy type-only lists.
+        return allChecklists.filter { $0.vehicle === v }
     }
 
     @ViewBuilder
@@ -661,10 +658,19 @@ struct VehicleFormView: View {
                         }
                     }
 
+                    // Tombstone the vehicle and its drive logs so deletions sync to CloudKit
+                    CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id)
+                    if let driveLogs = vehicle.driveLogs {
+                        for log in driveLogs {
+                            CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id)
+                        }
+                    }
+
                     modelContext.insert(newTrailer)
                     modelContext.delete(vehicle)
                     try modelContext.save()
                     // Request immediate sync after converting vehicle to trailer
+                    Task { await CloudKitSyncService.shared.pushDeletions() }
                     NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                     dismiss()
                     return

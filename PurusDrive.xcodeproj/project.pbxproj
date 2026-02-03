@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A21462102F2FD2DD00BB44C4 /* DeletedRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = A214620F2F2FD2DD00BB44C4 /* DeletedRecord.swift */; };
+		A21463E62F31EF7B00BB44C4 /* CloudKitSchema.txt in Resources */ = {isa = PBXBuildFile; fileRef = A21463E52F31EF7B00BB44C4 /* CloudKitSchema.txt */; };
 		A28CCB0F2F2F5B94006F36DD /* SyncReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */; };
 		A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */; };
 /* End PBXBuildFile section */
@@ -31,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		A214620F2F2FD2DD00BB44C4 /* DeletedRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeletedRecord.swift; sourceTree = "<group>"; };
+		A21463E52F31EF7B00BB44C4 /* CloudKitSchema.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = CloudKitSchema.txt; sourceTree = "<group>"; };
 		A26AC49C2EFF4F0000AC99E4 /* PurusDrive.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PurusDrive.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4AD2EFF4F0100AC99E4 /* PurusDriveTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PurusDriveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A26AC4B72EFF4F0100AC99E4 /* PurusDriveUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PurusDriveUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -106,6 +108,7 @@
 				A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */,
 				A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */,
 				A214620F2F2FD2DD00BB44C4 /* DeletedRecord.swift */,
+				A21463E52F31EF7B00BB44C4 /* CloudKitSchema.txt */,
 			);
 			sourceTree = "<group>";
 		};
@@ -239,6 +242,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A21463E62F31EF7B00BB44C4 /* CloudKitSchema.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
