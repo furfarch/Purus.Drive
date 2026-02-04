@@ -697,10 +697,11 @@ final class CloudKitSyncService {
     private func pushDriveLogs(context: ModelContext) async throws {
         let driveLogs = try context.fetch(FetchDescriptor<DriveLog>())
         let deleted = tombstonedIDs(in: context)
-        print("CloudKit: pushing \(driveLogs.count) drive logs …")
+        let activeLogs = driveLogs.filter { !deleted.contains($0.id) }
+        print("CloudKit: pushing \(activeLogs.count) drive logs …")
 
         var records: [CKRecord] = []
-        for log in driveLogs.filter({ !deleted.contains($0.id) }) {
+        for log in activeLogs {
             let recordID = recordID(for: "CD_DriveLog", uuid: log.id)
             let record = CKRecord(recordType: "CD_DriveLog", recordID: recordID)
 
@@ -725,8 +726,8 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": driveLogs.count])
-            print("CloudKit: pushed \(driveLogs.count) drive logs")
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "DriveLogs", "count": activeLogs.count])
+            print("CloudKit: pushed \(activeLogs.count) drive logs")
         } catch {
             print("CloudKit: failed to push drive logs batch: \(error)")
             throw error
@@ -797,10 +798,11 @@ final class CloudKitSyncService {
     private func pushChecklists(context: ModelContext) async throws {
         let checklists = try context.fetch(FetchDescriptor<Checklist>())
         let deleted = tombstonedIDs(in: context)
-        print("CloudKit: pushing \(checklists.count) checklists …")
+        let activeChecklists = checklists.filter { !deleted.contains($0.id) }
+        print("CloudKit: pushing \(activeChecklists.count) checklists …")
 
         var records: [CKRecord] = []
-        for checklist in checklists.filter({ !deleted.contains($0.id) }) {
+        for checklist in activeChecklists {
             let recordID = recordID(for: "CD_Checklist", uuid: checklist.id)
             let record = CKRecord(recordType: "CD_Checklist", recordID: recordID)
 
@@ -822,8 +824,8 @@ final class CloudKitSyncService {
 
         do {
             try await saveRecordsBatch(records)
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": checklists.count])
-            print("CloudKit: pushed \(checklists.count) checklists")
+            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Checklists", "count": activeChecklists.count])
+            print("CloudKit: pushed \(activeChecklists.count) checklists")
         } catch {
             print("CloudKit: failed to push checklists batch: \(error)")
             throw error
@@ -1022,6 +1024,13 @@ final class CloudKitSyncService {
                 } else {
                     print("CloudKit per-record save error for \(recordID.recordName): \(error)")
                 }
+                let message: String
+                if let ckError = error as? CKError {
+                    message = "Save error for \(recordID.recordName): \(ckError.code) - \(ckError.localizedDescription)"
+                } else {
+                    message = "Save error for \(recordID.recordName): \(error.localizedDescription)"
+                }
+                NotificationCenter.default.post(name: .syncError, object: nil, userInfo: ["message": message])
             }
         }
 
@@ -1036,6 +1045,14 @@ final class CloudKitSyncService {
                     } else {
                         print("CloudKit saveRecordsBatch error: \(error)")
                     }
+                    let message: String
+                    if let ckError = error as? CKError {
+                        message = "Batch save error: \(ckError.code) - \(ckError.localizedDescription)"
+                    } else {
+                        message = "Batch save error: \(error.localizedDescription)"
+                    }
+                    NotificationCenter.default.post(name: .syncError, object: nil, userInfo: ["message": message])
+
                     // Check for zone not found error
                     if let ckError = error as? CKError, ckError.code == .zoneNotFound {
                         Task {
@@ -1124,5 +1141,6 @@ private extension Notification.Name {
     static let syncFetchedCount = Notification.Name("SyncFetchedCountNotification")
     static let syncPushedCount = Notification.Name("SyncPushedCountNotification")
     static let syncImportedCount = Notification.Name("SyncImportedCountNotification")
+    static let syncError = Notification.Name("SyncErrorNotification")
 }
 

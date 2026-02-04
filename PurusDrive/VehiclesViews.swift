@@ -209,6 +209,11 @@ struct VehiclesListView: View {
             syncStatusText = "Sync complete"
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { syncStatusText = "" }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncErrorNotification"))) { output in
+            if let info = output.userInfo as? [String: Any], let message = info["message"] as? String {
+                syncStatusText = message
+            }
+        }
     }
 }
 
