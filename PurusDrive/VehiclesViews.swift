@@ -9,6 +9,8 @@ struct VehiclesListView: View {
     @Query(sort: \DriveLog.date, order: .reverse) private var allDriveLogs: [DriveLog]
     @Query(sort: \Checklist.lastEdited, order: .reverse) private var allChecklists: [Checklist]
 
+    @State private var syncStatusText: String = ""
+
     // Trailers linked to vehicles should not appear as standalone rows.
     private var linkedTrailerIDs: Set<UUID> {
         Set(vehicles.compactMap { $0.trailer?.id })
@@ -20,6 +22,16 @@ struct VehiclesListView: View {
 
     var body: some View {
         List {
+            if !syncStatusText.isEmpty {
+                HStack(spacing: 8) {
+                    if syncStatusText.hasPrefix("Syncing") { ProgressView().scaleEffect(0.8) }
+                    Text(syncStatusText).font(.footnote).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowSeparator(.hidden)
+            }
+
             // Header row: plain text + icons (NOT a toolbar title)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) { Image(systemName: "car"); Text("Vehicles") }
@@ -175,6 +187,28 @@ struct VehiclesListView: View {
         }
         .listStyle(.plain)
         .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
+            syncStatusText = "Syncing with iCloud…"
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncFetchedCountNotification"))) { output in
+            if let info = output.userInfo as? [String: Any], let type = info["type"] as? String, let count = info["count"] as? Int {
+                syncStatusText = "Fetched \(count) \(type)"
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncPushedCountNotification"))) { output in
+            if let info = output.userInfo as? [String: Any], let type = info["type"] as? String, let count = info["count"] as? Int {
+                syncStatusText = "Uploaded \(count) \(type)"
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncImportedCountNotification"))) { output in
+            if let info = output.userInfo as? [String: Any], let type = info["type"] as? String, let count = info["count"] as? Int {
+                syncStatusText = "Imported \(count) \(type)"
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncCompletedNotification"))) { _ in
+            syncStatusText = "Sync complete"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { syncStatusText = "" }
+        }
     }
 }
 

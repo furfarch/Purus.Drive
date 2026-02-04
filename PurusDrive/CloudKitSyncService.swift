@@ -339,8 +339,9 @@ final class CloudKitSyncService {
                 return
             }
 
-            // Then, delete the original records from CloudKit
-            // Do this one at a time to handle "record not found" gracefully
+            // Track which tombstones were successfully reflected in CloudKit deletions
+            var successfullyDeletedIDs: Set<UUID> = []
+
             for ts in tombstones {
                 let type = mappedRecordType(from: ts.entityType)
                 let tsId = ts.id
@@ -350,10 +351,10 @@ final class CloudKitSyncService {
                 do {
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         privateDatabase.delete(withRecordID: recordIDToDelete) { _, error in
-                            if let error = error as? CKError {
-                                // Ignore "record not found" - it's already deleted or was never synced
-                                if error.code == .unknownItem {
+                            if let ckError = error as? CKError {
+                                if ckError.code == .unknownItem {
                                     print("CloudKit: record \(tsEntityType) \(tsId) not found in cloud (already deleted or never synced)")
+                                    successfullyDeletedIDs.insert(tsId)
                                     continuation.resume()
                                     return
                                 }
@@ -361,6 +362,7 @@ final class CloudKitSyncService {
                             if let error = error {
                                 continuation.resume(throwing: error)
                             } else {
+                                successfullyDeletedIDs.insert(tsId)
                                 continuation.resume()
                             }
                         }
@@ -368,9 +370,11 @@ final class CloudKitSyncService {
                 } catch {
                     print("CloudKit: failed to delete \(tsEntityType) \(tsId) from cloud - \(error)")
                 }
+            }
 
-                // Remove local tombstone only if we successfully saved tombstones to CloudKit
-                if savedTombstonesToCloud {
+            // Only remove local tombstones that we know CloudKit has acknowledged (deleted or already gone)
+            if savedTombstonesToCloud {
+                for ts in tombstones where successfullyDeletedIDs.contains(ts.id) {
                     context.delete(ts)
                 }
             }
