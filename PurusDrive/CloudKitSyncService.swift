@@ -469,12 +469,54 @@ final class CloudKitSyncService {
     // MARK: - Image Compression Helper
     private func compressedJPEGData(from data: Data, maxBytes: Int = 900_000) -> Data? {
         guard let img = UIImage(data: data) else { return nil }
-        // Try a few qualities to get under the size cap
-        for q in stride(from: 0.8, through: 0.2, by: -0.2) {
-            if let jpeg = img.jpegData(compressionQuality: CGFloat(q)), jpeg.count <= maxBytes { return jpeg }
+
+        // Try multiple max-dimension steps and compression qualities
+        let dimensionCandidates: [CGFloat] = [2000, 1600, 1200, 1000, 800, 600]
+        let qualityCandidates: [CGFloat] = [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]
+
+        // Helper to render a resized copy that fits within the target max dimension
+        func resizedImage(_ image: UIImage, targetMaxDimension: CGFloat) -> UIImage {
+            let size = image.size
+            let maxSide = max(size.width, size.height)
+            let scale = min(1.0, targetMaxDimension / maxSide)
+            // If already within bounds, return as-is
+            if scale >= 1.0 { return image }
+            let newSize = CGSize(width: floor(size.width * scale), height: floor(size.height * scale))
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1.0 // Avoid multiplying pixels by screen scale
+            let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+            return renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
         }
-        // As a last resort, return the smallest we generated even if over limit
-        return img.jpegData(compressionQuality: 0.2)
+
+        var bestData: Data? = nil
+
+        // First, try original image with decreasing quality
+        for q in qualityCandidates {
+            if let jpg = img.jpegData(compressionQuality: q) {
+                if jpg.count <= maxBytes { return jpg }
+                if bestData == nil || jpg.count < (bestData?.count ?? Int.max) {
+                    bestData = jpg
+                }
+            }
+        }
+
+        // Then, progressively downscale and try qualities again
+        for dim in dimensionCandidates {
+            let scaled = resizedImage(img, targetMaxDimension: dim)
+            for q in qualityCandidates {
+                if let jpg = scaled.jpegData(compressionQuality: q) {
+                    if jpg.count <= maxBytes { return jpg }
+                    if bestData == nil || jpg.count < (bestData?.count ?? Int.max) {
+                        bestData = jpg
+                    }
+                }
+            }
+        }
+
+        // As a last resort, return the smallest we produced, even if above the cap
+        return bestData
     }
 
     // MARK: - Tombstone Helper
