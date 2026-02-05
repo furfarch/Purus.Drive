@@ -78,6 +78,14 @@ struct VehiclesListView: View {
                 .swipeActions {
                     Button(role: .destructive) {
                         CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
+                        // Immediate local cascade: delete trailer checklists and their items; unlink from any vehicle
+                        if let cls = t.checklists {
+                            for c in cls {
+                                for i in (c.items ?? []) { modelContext.delete(i) }
+                                modelContext.delete(c)
+                            }
+                        }
+                        t.linkedVehicle?.trailer = nil
                         modelContext.delete(t)
                         do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
                         Task { await CloudKitSyncService.shared.pushDeletions() }
@@ -134,6 +142,15 @@ struct VehiclesListView: View {
                 .swipeActions {
                     Button(role: .destructive) {
                         CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
+                        // Immediate local cascade: delete drive logs, checklists and their items; unlink trailer
+                        if let logs = v.driveLogs { for l in logs { modelContext.delete(l) } }
+                        if let cls = v.checklists {
+                            for c in cls {
+                                for i in (c.items ?? []) { modelContext.delete(i) }
+                                modelContext.delete(c)
+                            }
+                        }
+                        if let tr = v.trailer { tr.linkedVehicle = nil; v.trailer = nil }
                         modelContext.delete(v)
                         do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
                         Task { await CloudKitSyncService.shared.pushDeletions() }
@@ -439,6 +456,8 @@ struct VehicleFormView: View {
                                 // Clear any log references first.
                                 for log in allDriveLogs where log.checklist === cl { log.checklist = nil }
                                 CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
+                                // Immediate local cascade: delete items
+                                for i in (cl.items ?? []) { modelContext.delete(i) }
                                 modelContext.delete(cl)
                                 do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
                                 Task { await CloudKitSyncService.shared.pushDeletions() }
@@ -597,6 +616,15 @@ struct VehicleFormView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
                         CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id)
+                        // Immediate local cascade: delete drive logs, checklists and their items; unlink trailer
+                        if let logs = vehicle.driveLogs { for l in logs { modelContext.delete(l) } }
+                        if let cls = vehicle.checklists {
+                            for c in cls {
+                                for i in (c.items ?? []) { modelContext.delete(i) }
+                                modelContext.delete(c)
+                            }
+                        }
+                        if let tr = vehicle.trailer { tr.linkedVehicle = nil; vehicle.trailer = nil }
                         modelContext.delete(vehicle)
                         try? modelContext.save()
                         Task { await CloudKitSyncService.shared.pushDeletions() }
@@ -999,6 +1027,14 @@ private struct NewTrailerFormView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
                         CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: existing.id)
+                        // Immediate local cascade: delete trailer checklists and their items; unlink from any vehicle
+                        if let cls = existing.checklists {
+                            for c in cls {
+                                for i in (c.items ?? []) { modelContext.delete(i) }
+                                modelContext.delete(c)
+                            }
+                        }
+                        existing.linkedVehicle?.trailer = nil
                         modelContext.delete(existing)
                         try? modelContext.save()
                         Task { await CloudKitSyncService.shared.pushDeletions() }

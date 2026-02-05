@@ -1,6 +1,7 @@
 import Foundation
 import CloudKit
 import SwiftData
+import UIKit
 
 /// Manual CloudKit sync service for Purus Drive.
 /// Uses local SwiftData storage and manually syncs to CloudKit.
@@ -84,24 +85,25 @@ final class CloudKitSyncService {
             let query = CKQuery(recordType: "CD_Deleted", predicate: NSPredicate(value: true))
             let records = try await fetchRecords(query: query)
             if records.isEmpty { return }
-            var toDeleteFromCloud: [CKRecord.ID] = []
+            // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
             for rec in records {
                 guard let type = rec["entityType"] as? String,
                       let idStr = rec["entityID"] as? String,
                       let uuid = UUID(uuidString: idStr) else { continue }
                 do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
-                toDeleteFromCloud.append(rec.recordID)
+                // toDeleteFromCloud.append(rec.recordID) // Removed
             }
             try context.save()
-            if !toDeleteFromCloud.isEmpty {
-                let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: toDeleteFromCloud)
-                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                    op.modifyRecordsResultBlock = { result in
-                        switch result { case .success: continuation.resume(); case .failure(let error): continuation.resume(throwing: error) }
-                    }
-                    privateDatabase.add(op)
-                }
-            }
+            // if !toDeleteFromCloud.isEmpty {
+            //     let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: toDeleteFromCloud)
+            //     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            //         op.modifyRecordsResultBlock = { result in
+            //             switch result { case .success: continuation.resume(); case .failure(let error): continuation.resume(throwing: error) }
+            //         }
+            //         privateDatabase.add(op)
+            //     }
+            // }
+            // Retain tombstones in CloudKit so all devices can consume them
         } catch {
             print("CloudKit: fetchRemoteTombstones error - \(error)")
         }
@@ -464,6 +466,17 @@ final class CloudKitSyncService {
         return try? Data(contentsOf: url)
     }
 
+    // MARK: - Image Compression Helper
+    private func compressedJPEGData(from data: Data, maxBytes: Int = 900_000) -> Data? {
+        guard let img = UIImage(data: data) else { return nil }
+        // Try a few qualities to get under the size cap
+        for q in stride(from: 0.8, through: 0.2, by: -0.2) {
+            if let jpeg = img.jpegData(compressionQuality: CGFloat(q)), jpeg.count <= maxBytes { return jpeg }
+        }
+        // As a last resort, return the smallest we generated even if over limit
+        return img.jpegData(compressionQuality: 0.2)
+    }
+
     // MARK: - Tombstone Helper
     
     private func tombstonedIDs(in context: ModelContext) -> Set<UUID> {
@@ -478,7 +491,6 @@ final class CloudKitSyncService {
         let deleted = tombstonedIDs(in: context)
         let activeVehicles = vehicles.filter { !deleted.contains($0.id) }
         print("CloudKit: pushing \(activeVehicles.count) vehicles …")
-        var tempAssetURLs: [URL] = []
 
         var records: [CKRecord] = []
         for vehicle in activeVehicles {
@@ -493,40 +505,42 @@ final class CloudKitSyncService {
             record["CD_notes"] = vehicle.notes
             record["CD_lastEdited"] = vehicle.lastEdited
 
-            // Try to include photos via both methods for maximum compatibility
-            if let photoData = vehicle.photoData {
-                // Method 1: CKAsset for larger files (preferred, supports photos > 1MB)
-                if let (asset, url) = try? makeAsset(from: photoData, named: "vehicle_\(vehicle.id.uuidString)") {
-                    record["CD_photoAsset"] = asset
-                    tempAssetURLs.append(url)
-                    print("CloudKit: prepared photo asset for vehicle \(vehicle.id) (\(photoData.count) bytes)")
-                }
-                // Method 2: Inline data for smaller files (fallback, max ~900KB)
-                if photoData.count <= 900_000 {
-                    record["CD_photoData"] = photoData
-                    print("CloudKit: prepared inline photo for vehicle \(vehicle.id) (\(photoData.count) bytes)")
-                }
+            if let photoData = vehicle.photoData, let jpeg = compressedJPEGData(from: photoData) {
+                record["CD_photoData"] = jpeg
             }
 
-            if let trailer = vehicle.trailer {
-                record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
-            }
-
+            // Do NOT set CD_trailer in first pass (two-phase linking)
             records.append(record)
         }
 
-        do {
-            try await saveRecordsBatch(records)
-            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": activeVehicles.count])
-            print("CloudKit: successfully pushed \(activeVehicles.count) vehicles with photos")
-        } catch {
-            // Clean up temp files even on failure
-            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            print("CloudKit: vehicles push failed (\(error))")
-            // Re-throw to allow caller to handle the error
-            throw error
+        // Chunked save for base vehicle records
+        let chunkSize = 100
+        for chunk in stride(from: 0, to: records.count, by: chunkSize) {
+            let end = min(chunk + chunkSize, records.count)
+            let batch = Array(records[chunk..<end])
+            try await saveRecordsBatch(batch)
         }
+
+        // Phase 2: apply trailer links only
+        var linkRecords: [CKRecord] = []
+        for vehicle in activeVehicles {
+            if let trailer = vehicle.trailer {
+                let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
+                let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
+                record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
+                linkRecords.append(record)
+            }
+        }
+        if !linkRecords.isEmpty {
+            for chunk in stride(from: 0, to: linkRecords.count, by: chunkSize) {
+                let end = min(chunk + chunkSize, linkRecords.count)
+                let batch = Array(linkRecords[chunk..<end])
+                try await saveRecordsBatch(batch, savePolicy: .changedKeys)
+            }
+        }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Vehicles", "count": activeVehicles.count])
+        print("CloudKit: successfully pushed \(activeVehicles.count) vehicles (two-phase link, inline photos)")
     }
 
     private func fetchVehicles(context: ModelContext) async throws {
@@ -597,7 +611,6 @@ final class CloudKitSyncService {
         let deleted = tombstonedIDs(in: context)
         let activeTrailers = trailers.filter { !deleted.contains($0.id) }
         print("CloudKit: pushing \(activeTrailers.count) trailers …")
-        var tempAssetURLs: [URL] = []
 
         var records: [CKRecord] = []
         for trailer in activeTrailers {
@@ -611,39 +624,23 @@ final class CloudKitSyncService {
             record["CD_notes"] = trailer.notes
             record["CD_lastEdited"] = trailer.lastEdited
 
-            // Try to include photos via both methods for maximum compatibility
-            if let photoData = trailer.photoData {
-                // Method 1: CKAsset for larger files (preferred)
-                if let (asset, url) = try? makeAsset(from: photoData, named: "trailer_\(trailer.id.uuidString)") {
-                    record["CD_photoAsset"] = asset
-                    tempAssetURLs.append(url)
-                    print("CloudKit: prepared photo asset for trailer \(trailer.id) (\(photoData.count) bytes)")
-                }
-                // Method 2: Inline data for smaller files (fallback)
-                if photoData.count <= 900_000 {
-                    record["CD_photoData"] = photoData
-                    print("CloudKit: prepared inline photo for trailer \(trailer.id) (\(photoData.count) bytes)")
-                }
+            if let photoData = trailer.photoData, let jpeg = compressedJPEGData(from: photoData) {
+                record["CD_photoData"] = jpeg
             }
-
-            // Removed linkedVehicle reference to avoid circular dependency
-            // The link is established from Vehicle -> Trailer
 
             records.append(record)
         }
 
-        do {
-            try await saveRecordsBatch(records)
-            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": activeTrailers.count])
-            print("CloudKit: successfully pushed \(activeTrailers.count) trailers with photos")
-        } catch {
-            // Clean up temp files even on failure
-            for url in tempAssetURLs { try? FileManager.default.removeItem(at: url) }
-            print("CloudKit: trailers push failed (\(error))")
-            // Re-throw to allow caller to handle the error
-            throw error
+        // Chunked save for trailers
+        let chunkSize = 100
+        for chunk in stride(from: 0, to: records.count, by: chunkSize) {
+            let end = min(chunk + chunkSize, records.count)
+            let batch = Array(records[chunk..<end])
+            try await saveRecordsBatch(batch)
         }
+
+        NotificationCenter.default.post(name: .syncPushedCount, object: nil, userInfo: ["type": "Trailers", "count": activeTrailers.count])
+        print("CloudKit: successfully pushed \(activeTrailers.count) trailers (inline photos)")
     }
 
     private func fetchTrailers(context: ModelContext) async throws {
@@ -1007,11 +1004,11 @@ final class CloudKitSyncService {
     // MARK: - CloudKit Helpers
 
     /// Saves multiple records in a single batch operation (much faster than individual saves)
-    private func saveRecordsBatch(_ records: [CKRecord]) async throws {
+    private func saveRecordsBatch(_ records: [CKRecord], savePolicy: CKModifyRecordsOperation.RecordSavePolicy = .allKeys) async throws {
         guard !records.isEmpty else { return }
 
         let op = CKModifyRecordsOperation(recordsToSave: records, recordIDsToDelete: nil)
-        op.savePolicy = .allKeys
+        op.savePolicy = savePolicy
         op.isAtomic = false  // Allow partial success - some records may fail but others succeed
 
         op.perRecordSaveBlock = { recordID, result in
@@ -1059,7 +1056,7 @@ final class CloudKitSyncService {
                             do {
                                 try await self.ensureZoneExists()
                                 // Retry once after ensuring the zone exists
-                                try await self.saveRecordsBatch(records)
+                                try await self.saveRecordsBatch(records, savePolicy: savePolicy)
                                 continuation.resume()
                             } catch {
                                 continuation.resume(throwing: error)
