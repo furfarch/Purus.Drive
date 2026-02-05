@@ -202,17 +202,23 @@ final class CloudKitSyncService {
 
         do { try await ensureZoneExists() } catch { print("CloudKit: ensureZoneExists failed before pushAllToCloud - \(error)") }
 
-        // First, push deletions so tombstones win
+        // Always push local deletions first so CloudKit learns about them
         await pushDeletions()
 
-        // Push each entity type independently - one failure shouldn't stop others
+        // Then pull remote tombstones to avoid resurrecting records on this device
+        await fetchRemoteTombstones()
+
+        // Now push each entity type independently — one failure shouldn't stop others
         do { try await pushTrailers(context: context) } catch { print("CloudKitSyncService: Push trailers error - \(error)") }
         do { try await pushVehicles(context: context) } catch { print("CloudKitSyncService: Push vehicles error - \(error)") }
         do { try await pushChecklists(context: context) } catch { print("CloudKitSyncService: Push checklists error - \(error)") }
         do { try await pushChecklistItems(context: context) } catch { print("CloudKitSyncService: Push checklist items error - \(error)") }
         do { try await pushDriveLogs(context: context) } catch { print("CloudKitSyncService: Push drive logs error - \(error)") }
 
-        print("CloudKitSyncService: Push to cloud completed")
+        // Final pass to push any tombstones created during this run
+        await pushDeletions()
+
+        print("CloudKitSyncService: Push to cloud completed (safe order with tombstone fetch)")
     }
 
     /// Records a local deletion so it can be pushed to CloudKit.
