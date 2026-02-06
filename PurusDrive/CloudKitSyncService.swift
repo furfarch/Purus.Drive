@@ -307,6 +307,29 @@ final class CloudKitSyncService {
         }
     }
 
+    // New helper method added above pushDeletions
+    private func attemptDelete(recordName: String, zoneID: CKRecordZone.ID) async -> Result<Void, CKError> {
+        let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
+        return await withCheckedContinuation { continuation in
+            privateDatabase.delete(withRecordID: recordID) { _, error in
+                if error == nil {
+                    continuation.resume(returning: .success(()))
+                    return
+                }
+                if let ckError = error as? CKError {
+                    if ckError.code == .unknownItem {
+                        continuation.resume(returning: .success(()))
+                    } else {
+                        continuation.resume(returning: .failure(ckError))
+                    }
+                } else {
+                    print("CloudKit: unknown error deleting record \(recordName)")
+                    continuation.resume(returning: .failure(CKError(.internalError)))
+                }
+            }
+        }
+    }
+
     /// Pushes pending deletions to CloudKit and removes tombstones on success.
     func pushDeletions() async {
         guard let context = modelContext else { return }
@@ -347,36 +370,39 @@ final class CloudKitSyncService {
                 return
             }
 
-            // Track which tombstones were successfully reflected in CloudKit deletions
             var successfullyDeletedIDs: Set<UUID> = []
 
             for ts in tombstones {
-                let type = mappedRecordType(from: ts.entityType)
                 let tsId = ts.id
                 let tsEntityType = ts.entityType
-                let recordIDToDelete = CKRecord.ID(recordName: "\(type)_\(tsId.uuidString)", zoneID: recordZone.zoneID)
 
-                do {
-                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                        privateDatabase.delete(withRecordID: recordIDToDelete) { _, error in
-                            if let ckError = error as? CKError {
-                                if ckError.code == .unknownItem {
-                                    print("CloudKit: record \(tsEntityType) \(tsId) not found in cloud (already deleted or never synced)")
-                                    successfullyDeletedIDs.insert(tsId)
-                                    continuation.resume()
-                                    return
-                                }
-                            }
-                            if let error = error {
-                                continuation.resume(throwing: error)
-                            } else {
-                                successfullyDeletedIDs.insert(tsId)
-                                continuation.resume()
-                            }
-                        }
+                // Four fallback recordNames and zones to try in order:
+                let mappedType = mappedRecordType(from: tsEntityType)
+                let candidates: [(recordName: String, zone: CKRecordZone.ID, zoneName: String)] = [
+                    ("\(mappedType)_\(tsId.uuidString)", recordZone.zoneID, "custom"),
+                    ("\(mappedType)_\(tsId.uuidString)", CKRecordZone.default().zoneID, "default"),
+                    ("\(tsId.uuidString)", recordZone.zoneID, "custom"),
+                    ("\(tsId.uuidString)", CKRecordZone.default().zoneID, "default"),
+                ]
+
+                var deletedSuccessfully = false
+
+                for (recordName, zoneID, zoneDesc) in candidates {
+                    let result = await attemptDelete(recordName: recordName, zoneID: zoneID)
+                    switch result {
+                    case .success:
+                        print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> ok")
+                        deletedSuccessfully = true
+                        break
+                    case .failure(let ckError):
+                        print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> error \(ckError.code.rawValue)")
+                        continue
                     }
-                } catch {
-                    print("CloudKit: failed to delete \(tsEntityType) \(tsId) from cloud - \(error)")
+                    if deletedSuccessfully { break }
+                }
+
+                if deletedSuccessfully {
+                    successfullyDeletedIDs.insert(tsId)
                 }
             }
 
