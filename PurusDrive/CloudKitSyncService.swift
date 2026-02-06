@@ -148,6 +148,8 @@ final class CloudKitSyncService {
         // 2) Apply remote deletions so local store is purged
         await fetchRemoteTombstones()
 
+        await pushDeletions()
+
         // 3) Fetch from cloud (each type independently)
         //    Deleted items are now filtered out via tombstonedIDs
         do { try await fetchTrailers(context: context) } catch { print("CloudKit: fetch trailers error - \(error)") }
@@ -627,8 +629,17 @@ final class CloudKitSyncService {
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
-            
-            if deletedIDs.contains(uuid) { continue }
+
+            if deletedIDs.contains(uuid) {
+                // Remote record exists but is locally tombstoned: delete it from CloudKit and skip import
+                let type = mappedRecordType(from: "Vehicle")
+                let currentName = "\(type)_\(uuid.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: CKRecordZone.default().zoneID)
+                continue
+            }
 
             // Check if vehicle exists locally
             let descriptor = FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == uuid })
@@ -727,8 +738,17 @@ final class CloudKitSyncService {
         for record in records {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
-            
-            if deletedIDs.contains(uuid) { continue }
+
+            if deletedIDs.contains(uuid) {
+                // Remote record exists but is locally tombstoned: delete it from CloudKit and skip import
+                let type = mappedRecordType(from: "Trailer")
+                let currentName = "\(type)_\(uuid.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: CKRecordZone.default().zoneID)
+                continue
+            }
 
             let descriptor = FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -816,7 +836,16 @@ final class CloudKitSyncService {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
 
-            if deletedIDs.contains(uuid) { continue }
+            if deletedIDs.contains(uuid) {
+                // Remote record exists but is locally tombstoned: delete it from CloudKit and skip import
+                let type = mappedRecordType(from: "DriveLog")
+                let currentName = "\(type)_\(uuid.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: CKRecordZone.default().zoneID)
+                continue
+            }
 
             let descriptor = FetchDescriptor<DriveLog>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -914,7 +943,16 @@ final class CloudKitSyncService {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
 
-            if deletedIDs.contains(uuid) { continue }
+            if deletedIDs.contains(uuid) {
+                // Remote record exists but is locally tombstoned: delete it from CloudKit and skip import
+                let type = mappedRecordType(from: "Checklist")
+                let currentName = "\(type)_\(uuid.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: CKRecordZone.default().zoneID)
+                continue
+            }
 
             let descriptor = FetchDescriptor<Checklist>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
@@ -1041,7 +1079,16 @@ final class CloudKitSyncService {
             guard let idString = record["CD_id"] as? String,
                   let uuid = UUID(uuidString: idString) else { continue }
 
-            if deletedIDs.contains(uuid) { continue }
+            if deletedIDs.contains(uuid) {
+                // Remote record exists but is locally tombstoned: delete it from CloudKit and skip import
+                let type = mappedRecordType(from: "ChecklistItem")
+                let currentName = "\(type)_\(uuid.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: uuid.uuidString, zoneID: CKRecordZone.default().zoneID)
+                continue
+            }
 
             let descriptor = FetchDescriptor<ChecklistItem>(predicate: #Predicate { $0.id == uuid })
             let existing = try context.fetch(descriptor).first
