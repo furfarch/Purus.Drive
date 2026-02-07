@@ -96,12 +96,13 @@ final class CloudKitSyncService {
             
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
             for rec in records {
-                guard let type = rec["entityType"] as? String,
+                guard let rawType = rec["entityType"] as? String,
                       let idStr = rec["entityID"] as? String,
                       let uuid = UUID(uuidString: idStr) else { continue }
+                let normalizedType = rawType.hasPrefix("CD_") ? String(rawType.dropFirst(3)) : rawType
                 
                 // Apply the local deletion
-                do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
+                do { try localDelete(entityType: normalizedType, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(normalizedType) id=\(idStr): \(error)") }
                 
                 // Create a local tombstone to prevent re-import of this record
                 let deletedAt: Date
@@ -114,12 +115,12 @@ final class CloudKitSyncService {
                 
                 if let existing = existingTombstonesByID[uuid] {
                     // Update only deletedAt; entityType should not change for the same UUID
-                    if existing.entityType != type {
-                        print("CloudKit: warning - entityType mismatch for tombstone \(uuid): existing=\(existing.entityType), remote=\(type)")
+                    if existing.entityType != normalizedType {
+                        print("CloudKit: warning - entityType mismatch for tombstone \(uuid): existing=\(existing.entityType), remote=\(normalizedType)")
                     }
                     existing.deletedAt = deletedAt
                 } else {
-                    let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: deletedAt)
+                    let tombstone = DeletedRecord(entityType: normalizedType, id: uuid, deletedAt: deletedAt)
                     context.insert(tombstone)
                 }
                 
@@ -363,17 +364,17 @@ final class CloudKitSyncService {
     }
 
     // New helper method added above pushDeletions
-    private func attemptDelete(recordName: String, zoneID: CKRecordZone.ID) async -> Result<Void, CKError> {
+    private func attemptDelete(recordName: String, zoneID: CKRecordZone.ID) async -> Result<Bool, CKError> {
         let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         return await withCheckedContinuation { continuation in
             privateDatabase.delete(withRecordID: recordID) { _, error in
                 if error == nil {
-                    continuation.resume(returning: .success(()))
+                    continuation.resume(returning: .success(true))
                     return
                 }
                 if let ckError = error as? CKError {
                     if ckError.code == .unknownItem {
-                        continuation.resume(returning: .success(()))
+                        continuation.resume(returning: .success(false))
                     } else {
                         continuation.resume(returning: .failure(ckError))
                     }
@@ -433,30 +434,43 @@ final class CloudKitSyncService {
 
                 // Four fallback recordNames and zones to try in order:
                 let mappedType = mappedRecordType(from: tsEntityType)
-                let candidates: [(recordName: String, zone: CKRecordZone.ID, zoneName: String)] = [
-                    ("\(mappedType)_\(tsId.uuidString)", recordZone.zoneID, "custom"),
-                    ("\(mappedType)_\(tsId.uuidString)", CKRecordZone.default().zoneID, "default"),
-                    ("\(tsId.uuidString)", recordZone.zoneID, "custom"),
-                    ("\(tsId.uuidString)", CKRecordZone.default().zoneID, "default"),
-                ]
+                let primaryName = "\(mappedType)_\(tsId.uuidString)"
+                let legacyName = "\(tsEntityType)_\(tsId.uuidString)"
+                var recordNames: [String] = [primaryName]
+                if legacyName != primaryName {
+                    recordNames.append(legacyName)
+                }
+                recordNames.append(tsId.uuidString)
+                let candidates: [(recordName: String, zone: CKRecordZone.ID, zoneName: String)] = recordNames.flatMap { name in
+                    [(name, recordZone.zoneID, "custom"), (name, CKRecordZone.default().zoneID, "default")]
+                }
 
                 var deletedSuccessfully = false
+                var sawNotFound = false
+                var sawFailure = false
 
                 for (recordName, zoneID, zoneDesc) in candidates {
                     let result = await attemptDelete(recordName: recordName, zoneID: zoneID)
                     switch result {
-                    case .success:
-                        print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> ok")
-                        deletedSuccessfully = true
-                        break
+                    case .success(let deleted):
+                        if deleted {
+                            print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> ok")
+                            deletedSuccessfully = true
+                            break
+                        } else {
+                            print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> not found")
+                            sawNotFound = true
+                            continue
+                        }
                     case .failure(let ckError):
                         print("CloudKit: delete attempt [\(tsEntityType) \(tsId)] zone=\(zoneDesc) name=\(recordName) -> error \(ckError.code.rawValue)")
+                        sawFailure = true
                         continue
                     }
                     if deletedSuccessfully { break }
                 }
 
-                if deletedSuccessfully {
+                if deletedSuccessfully || (!sawFailure && sawNotFound) {
                     successfullyDeletedIDs.insert(tsId)
                 }
             }
@@ -1414,4 +1428,3 @@ private extension Notification.Name {
     static let syncError = Notification.Name("SyncErrorNotification")
     static let requestZoneScrub = Notification.Name("RequestZoneScrubNotification")
 }
-
