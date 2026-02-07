@@ -1,5 +1,6 @@
 import Foundation
 import CloudKit
+import Combine
 
 /// Represents a sync conflict between local and remote data.
 struct SyncConflict: Identifiable {
