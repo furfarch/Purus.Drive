@@ -1313,7 +1313,7 @@ final class CloudKitSyncService {
 
     /// Scrubs the CloudKit zone by removing duplicate records and those with invalid UUIDs.
     func scrubCloudZone() async {
-        guard let context = modelContext else {
+        guard modelContext != nil else {
             print("CloudKitSyncService: No model context set for scrubCloudZone")
             return
         }
@@ -1367,9 +1367,9 @@ final class CloudKitSyncService {
 
                 // Delete invalid records and duplicates
                 var totalDeleted = 0
-                var totalKept = validRecordsByUUID.count
-                var totalInvalid = invalidRecords.count
-                var totalDuplicates = duplicatesToDelete.count
+                let totalKept = validRecordsByUUID.count
+                let totalInvalid = invalidRecords.count
+                let totalDuplicates = duplicatesToDelete.count
 
                 // Delete invalid records
                 if !invalidRecords.isEmpty {
