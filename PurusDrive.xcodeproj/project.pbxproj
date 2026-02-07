@@ -11,6 +11,8 @@
 		A21463E62F31EF7B00BB44C4 /* CloudKitSchema.txt in Resources */ = {isa = PBXBuildFile; fileRef = A21463E52F31EF7B00BB44C4 /* CloudKitSchema.txt */; };
 		A28CCB0F2F2F5B94006F36DD /* SyncReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */; };
 		A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */; };
+		F0FB1673A1CB4839BF0600E3 /* SyncConflict.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F41916C31B94E988024F88B /* SyncConflict.swift */; };
+		72DB2301DA2B450CBA368320 /* SyncConflictView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B491547FF5A9459DBFCA06D2 /* SyncConflictView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +41,8 @@
 		A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncReport.swift; sourceTree = "<group>"; };
 		A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPhotoPickerView.swift; sourceTree = "<group>"; };
 		A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VehiclesViews.swift; sourceTree = "<group>"; };
+		1F41916C31B94E988024F88B /* SyncConflict.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncConflict.swift; sourceTree = "<group>"; };
+		B491547FF5A9459DBFCA06D2 /* SyncConflictView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncConflictView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -107,6 +111,8 @@
 				A2EA6EAB2F02C9E400AECEAF /* CarPhotoPickerView.swift */,
 				A2EA6EAD2F02C9E700AECEAF /* VehiclesViews.swift */,
 				A28CCB0E2F2F5B94006F36DD /* SyncReport.swift */,
+				1F41916C31B94E988024F88B /* SyncConflict.swift */,
+				B491547FF5A9459DBFCA06D2 /* SyncConflictView.swift */,
 				A214620F2F2FD2DD00BB44C4 /* DeletedRecord.swift */,
 				A21463E52F31EF7B00BB44C4 /* CloudKitSchema.txt */,
 			);
@@ -269,6 +275,8 @@
 			files = (
 				A2EA6EAC2F02C9E400AECEAF /* CarPhotoPickerView.swift in Sources */,
 				A28CCB0F2F2F5B94006F36DD /* SyncReport.swift in Sources */,
+				F0FB1673A1CB4839BF0600E3 /* SyncConflict.swift in Sources */,
+				72DB2301DA2B450CBA368320 /* SyncConflictView.swift in Sources */,
 				A21462102F2FD2DD00BB44C4 /* DeletedRecord.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
