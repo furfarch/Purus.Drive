@@ -756,8 +756,10 @@ final class CloudKitSyncService {
                 }
             } else {
                 // No trailer reference in CloudKit, clear the local link
-                vehicle.trailer?.linkedVehicle = nil
-                vehicle.trailer = nil
+                if let linkedTrailer = vehicle.trailer {
+                    linkedTrailer.linkedVehicle = nil
+                    vehicle.trailer = nil
+                }
             }
         }
         // Deletions are handled via cloud tombstones in fetchRemoteTombstones()
