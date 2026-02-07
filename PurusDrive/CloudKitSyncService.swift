@@ -85,12 +85,44 @@ final class CloudKitSyncService {
             let query = CKQuery(recordType: "CD_Deleted", predicate: NSPredicate(value: true))
             let records = try await fetchRecords(query: query)
             if records.isEmpty { return }
+            
+            // First, batch fetch all existing tombstones to avoid N+1 queries
+            let uuidSet = Set(records.compactMap { rec -> UUID? in
+                guard let idStr = rec["entityID"] as? String else { return nil }
+                return UUID(uuidString: idStr)
+            })
+            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { record in uuidSet.contains(record.id) }))
+            let existingTombstonesByID = Dictionary(existingTombstones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
             for rec in records {
                 guard let type = rec["entityType"] as? String,
                       let idStr = rec["entityID"] as? String,
                       let uuid = UUID(uuidString: idStr) else { continue }
+                
+                // Apply the local deletion
                 do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
+                
+                // Create a local tombstone to prevent re-import of this record
+                let deletedAt: Date
+                if let date = rec["deletedAt"] as? Date {
+                    deletedAt = date
+                } else {
+                    print("CloudKit: warning - tombstone record missing deletedAt, using modificationDate for \(type) id=\(idStr)")
+                    deletedAt = rec.modificationDate ?? .now
+                }
+                
+                if let existing = existingTombstonesByID[uuid] {
+                    // Update only deletedAt; entityType should not change for the same UUID
+                    if existing.entityType != type {
+                        print("CloudKit: warning - entityType mismatch for tombstone \(uuid): existing=\(existing.entityType), remote=\(type)")
+                    }
+                    existing.deletedAt = deletedAt
+                } else {
+                    let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: deletedAt)
+                    context.insert(tombstone)
+                }
+                
                 // toDeleteFromCloud.append(rec.recordID) // Removed
             }
             try context.save()
