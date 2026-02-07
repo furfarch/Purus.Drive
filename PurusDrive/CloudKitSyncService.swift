@@ -664,15 +664,19 @@ final class CloudKitSyncService {
             try await saveRecordsBatch(batch)
         }
 
-        // Phase 2: apply trailer links only
+        // Phase 2: apply trailer links (or clear them if unlinked)
         var linkRecords: [CKRecord] = []
         for vehicle in activeVehicles {
+            let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
+            let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
             if let trailer = vehicle.trailer {
-                let recordID = recordID(for: "CD_Vehicle", uuid: vehicle.id)
-                let record = CKRecord(recordType: "CD_Vehicle", recordID: recordID)
+                // Set the trailer reference
                 record["CD_trailer"] = referenceID(for: "CD_Trailer", uuid: trailer.id)
-                linkRecords.append(record)
+            } else {
+                // Explicitly clear the trailer reference when unlinked
+                record["CD_trailer"] = nil
             }
+            linkRecords.append(record)
         }
         if !linkRecords.isEmpty {
             for chunk in stride(from: 0, to: linkRecords.count, by: chunkSize) {
@@ -742,13 +746,19 @@ final class CloudKitSyncService {
                 }
             }
 
-            // Link to trailer if reference exists (trailers were fetched first)
+            // Link to trailer if reference exists (trailers were fetched first), or clear if not
             if let trailerRef = record["CD_trailer"] as? CKRecord.Reference {
                 let trailerUUID = extractUUID(from: trailerRef.recordID.recordName, prefix: "CD_Trailer_")
                 if let tUUID = trailerUUID {
                     let tDesc = FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == tUUID })
                     vehicle.trailer = try context.fetch(tDesc).first
                     vehicle.trailer?.linkedVehicle = vehicle
+                }
+            } else {
+                // No trailer reference in CloudKit, clear the local link
+                if let linkedTrailer = vehicle.trailer {
+                    linkedTrailer.linkedVehicle = nil
+                    vehicle.trailer = nil
                 }
             }
         }
