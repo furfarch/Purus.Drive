@@ -91,7 +91,7 @@ final class CloudKitSyncService {
                 guard let idStr = rec["entityID"] as? String else { return nil }
                 return UUID(uuidString: idStr)
             }
-            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { uuid in uuids.contains(uuid.id) }))
+            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { tombstone in uuids.contains(tombstone.id) }))
             let existingTombstonesByID = Dictionary(uniqueKeysWithValues: existingTombstones.map { ($0.id, $0) })
             
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
@@ -104,7 +104,14 @@ final class CloudKitSyncService {
                 do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
                 
                 // Create a local tombstone to prevent re-import of this record
-                let deletedAt = rec["deletedAt"] as? Date ?? .now
+                let deletedAt: Date
+                if let date = rec["deletedAt"] as? Date {
+                    deletedAt = date
+                } else {
+                    print("CloudKit: warning - tombstone record missing deletedAt, using modificationDate for \(type) id=\(idStr)")
+                    deletedAt = rec.modificationDate ?? .now
+                }
+                
                 if let existing = existingTombstonesByID[uuid] {
                     existing.entityType = type
                     existing.deletedAt = deletedAt
