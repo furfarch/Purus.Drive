@@ -109,7 +109,7 @@ final class CloudKitSyncService {
                 if let date = rec["deletedAt"] as? Date {
                     deletedAt = date
                 } else {
-                    print("CloudKit: warning - tombstone record missing deletedAt, using modificationDate for \(type) id=\(idStr)")
+                    print("CloudKit: warning - tombstone record missing deletedAt, using modificationDate for \(normalizedType) id=\(idStr)")
                     deletedAt = rec.modificationDate ?? .now
                 }
                 
