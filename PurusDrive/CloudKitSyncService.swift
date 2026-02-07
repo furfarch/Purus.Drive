@@ -91,7 +91,7 @@ final class CloudKitSyncService {
                 guard let idStr = rec["entityID"] as? String else { return nil }
                 return UUID(uuidString: idStr)
             }
-            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { tombstone in uuids.contains(tombstone.id) }))
+            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { record in uuids.contains(record.id) }))
             let existingTombstonesByID = Dictionary(uniqueKeysWithValues: existingTombstones.map { ($0.id, $0) })
             
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
@@ -113,7 +113,10 @@ final class CloudKitSyncService {
                 }
                 
                 if let existing = existingTombstonesByID[uuid] {
-                    existing.entityType = type
+                    // Update only deletedAt; entityType should not change for the same UUID
+                    if existing.entityType != type {
+                        print("CloudKit: warning - entityType mismatch for tombstone \(uuid): existing=\(existing.entityType), remote=\(type)")
+                    }
                     existing.deletedAt = deletedAt
                 } else {
                     let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: deletedAt)
