@@ -90,7 +90,20 @@ final class CloudKitSyncService {
                 guard let type = rec["entityType"] as? String,
                       let idStr = rec["entityID"] as? String,
                       let uuid = UUID(uuidString: idStr) else { continue }
+                
+                // Apply the local deletion
                 do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
+                
+                // Create a local tombstone to prevent re-import of this record
+                if let fetched = try? context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == uuid })),
+                   let existing = fetched.first {
+                    existing.entityType = type
+                    existing.deletedAt = rec["deletedAt"] as? Date ?? .now
+                } else {
+                    let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: rec["deletedAt"] as? Date ?? .now)
+                    context.insert(tombstone)
+                }
+                
                 // toDeleteFromCloud.append(rec.recordID) // Removed
             }
             try context.save()
