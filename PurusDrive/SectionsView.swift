@@ -20,6 +20,9 @@ struct SectionsView: View {
     @State private var showingImportPicker = false
     @State private var importAlertTitle: String? = nil
     @State private var importAlertMessage: String? = nil
+    
+    @State private var showingConflicts = false
+    @ObservedObject private var conflictStore = SyncConflictStore.shared
 
     @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
@@ -144,6 +147,15 @@ struct SectionsView: View {
                     Button("OK", role: .cancel) {}
                 } message: {
                     Text(importAlertMessage ?? "")
+                }
+                .sheet(isPresented: $showingConflicts) {
+                    SyncConflictView()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncConflictsDetected"))) { _ in
+                    // Check if there are conflicts after sync
+                    if conflictStore.hasUnresolvedConflicts() {
+                        showingConflicts = true
+                    }
                 }
         }
     }

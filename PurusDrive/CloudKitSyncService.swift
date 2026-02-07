@@ -26,6 +26,7 @@ final class CloudKitSyncService {
 
     private var modelContext: ModelContext?
     private let reportStore = SyncReportStore.shared
+    private let conflictStore = SyncConflictStore.shared
     private var lastErrorMessage: String? = nil
     private var shouldReconcileDeletes: Bool { lastErrorMessage == nil }
 
@@ -76,6 +77,27 @@ final class CloudKitSyncService {
         rec["entityID"] = ts.id.uuidString
         rec["deletedAt"] = ts.deletedAt
         return rec
+    }
+    
+    // MARK: - Conflict Detection
+    
+    /// Detect if a sync conflict exists between local and remote versions.
+    /// Returns true if both versions have been modified and user should decide which to keep.
+    /// Deletions are excluded from conflict detection (they're handled automatically).
+    private func hasConflict(localLastEdited: Date, remoteLastEdited: Date) -> Bool {
+        // If times are equal, no conflict
+        if localLastEdited == remoteLastEdited {
+            return false
+        }
+        
+        // If local is newer, it will win automatically (no conflict UI needed)
+        if localLastEdited > remoteLastEdited {
+            return false
+        }
+        
+        // Remote is newer - this is a conflict that needs user resolution
+        // The user should decide whether to keep their local changes or accept remote
+        return true
     }
 
     /// Fetch remote tombstones and apply local deletions, then remove the tombstones from CloudKit.
@@ -227,6 +249,11 @@ final class CloudKitSyncService {
 
         print("CloudKit: full sync completed")
         print("CloudKitSyncService: Full sync completed")
+        
+        // Notify if there are conflicts detected
+        if conflictStore.hasUnresolvedConflicts() {
+            NotificationCenter.default.post(name: Notification.Name("SyncConflictsDetected"), object: nil)
+        }
     }
 
     /// Fetches all records from CloudKit and imports them locally.
@@ -360,6 +387,124 @@ final class CloudKitSyncService {
                     NotificationCenter.default.post(name: Notification.Name("DeletionSyncedNotification"), object: nil, userInfo: ["entityType": entityType, "id": id])
                 }
             }
+        }
+    }
+
+    // MARK: - Conflict Resolution
+    
+    /// Apply user's resolution choice for a detected conflict
+    func resolveConflict(_ conflict: SyncConflict, resolution: ConflictResolution) async {
+        guard let context = modelContext else { return }
+        
+        conflictStore.resolve(conflictID: conflict.id, resolution: resolution)
+        
+        switch resolution {
+        case .keepLocal:
+            // Keep local version: push it to cloud to overwrite remote
+            print("CloudKit: Keeping local version for \(conflict.entityType) \(conflict.entityID)")
+            await applyKeepLocal(conflict: conflict, context: context)
+            
+        case .keepRemote:
+            // Accept remote version: apply it to local
+            print("CloudKit: Keeping remote version for \(conflict.entityType) \(conflict.entityID)")
+            await applyKeepRemote(conflict: conflict, context: context)
+            
+        case .pending:
+            // Should not happen, but handle gracefully
+            print("CloudKit: Warning - resolveConflict called with .pending resolution")
+        }
+    }
+    
+    private func applyKeepLocal(conflict: SyncConflict, context: ModelContext) async {
+        // When keeping local, we push the local version to cloud
+        // The regular push methods will handle this
+        do {
+            switch conflict.entityType {
+            case "Vehicle":
+                try await pushVehicles(context: context)
+            case "DriveLog":
+                try await pushDriveLogs(context: context)
+            case "Checklist":
+                try await pushChecklists(context: context)
+            default:
+                print("CloudKit: Unknown entity type for conflict resolution: \(conflict.entityType)")
+            }
+        } catch {
+            print("CloudKit: Error pushing local version: \(error)")
+        }
+    }
+    
+    private func applyKeepRemote(conflict: SyncConflict, context: ModelContext) async {
+        // When keeping remote, we apply the remote record to the local entity
+        let record = conflict.remoteRecord
+        let uuid = conflict.entityID
+        
+        do {
+            switch conflict.entityType {
+            case "Vehicle":
+                if let vehicle = try context.fetch(FetchDescriptor<Vehicle>(predicate: #Predicate { $0.id == uuid })).first {
+                    applyRemoteVehicle(record: record, to: vehicle)
+                }
+            case "DriveLog":
+                if let log = try context.fetch(FetchDescriptor<DriveLog>(predicate: #Predicate { $0.id == uuid })).first {
+                    applyRemoteDriveLog(record: record, to: log)
+                }
+            case "Checklist":
+                if let checklist = try context.fetch(FetchDescriptor<Checklist>(predicate: #Predicate { $0.id == uuid })).first {
+                    applyRemoteChecklist(record: record, to: checklist, context: context)
+                }
+            default:
+                print("CloudKit: Unknown entity type for conflict resolution: \(conflict.entityType)")
+            }
+            
+            try context.save()
+        } catch {
+            print("CloudKit: Error applying remote version: \(error)")
+        }
+    }
+    
+    private func applyRemoteVehicle(record: CKRecord, to vehicle: Vehicle) {
+        if let typeString = record["CD_type"] as? String,
+           let type = VehicleType(rawValue: typeString) {
+            vehicle.type = type
+        }
+        vehicle.brandModel = record["CD_brandModel"] as? String ?? ""
+        vehicle.color = record["CD_color"] as? String ?? ""
+        vehicle.plate = record["CD_plate"] as? String ?? ""
+        vehicle.notes = record["CD_notes"] as? String ?? ""
+        if let asset = record["CD_photoAsset"] as? CKAsset, let bytes = data(from: asset) {
+            vehicle.photoData = bytes
+        } else if let bytes = record["CD_photoData"] as? Data {
+            vehicle.photoData = bytes
+        } else {
+            vehicle.photoData = nil
+        }
+        if let lastEdited = record["CD_lastEdited"] as? Date {
+            vehicle.lastEdited = lastEdited
+        }
+    }
+    
+    private func applyRemoteDriveLog(record: CKRecord, to log: DriveLog) {
+        if let date = record["CD_date"] as? Date {
+            log.date = date
+        }
+        log.reason = record["CD_reason"] as? String ?? ""
+        log.kmStart = record["CD_kmStart"] as? Int ?? 0
+        log.kmEnd = record["CD_kmEnd"] as? Int ?? 0
+        log.notes = record["CD_notes"] as? String ?? ""
+        if let lastEdited = record["CD_lastEdited"] as? Date {
+            log.lastEdited = lastEdited
+        }
+    }
+    
+    private func applyRemoteChecklist(record: CKRecord, to checklist: Checklist, context: ModelContext) {
+        if let typeString = record["CD_vehicleType"] as? String,
+           let type = VehicleType(rawValue: typeString) {
+            checklist.vehicleType = type
+        }
+        checklist.title = record["CD_title"] as? String ?? ""
+        if let lastEdited = record["CD_lastEdited"] as? Date {
+            checklist.lastEdited = lastEdited
         }
     }
 
@@ -723,8 +868,20 @@ final class CloudKitSyncService {
             }
 
             let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
-            if existing != nil && vehicle.lastEdited >= cloudLastEdited {
-                // Skip overwrite; still allow establishing relationships below
+            if existing != nil && hasConflict(localLastEdited: vehicle.lastEdited, remoteLastEdited: cloudLastEdited) {
+                // Detected conflict: both local and remote have changes
+                let conflict = SyncConflict(
+                    entityType: "Vehicle",
+                    entityID: uuid,
+                    localLastEdited: vehicle.lastEdited,
+                    remoteLastEdited: cloudLastEdited,
+                    remoteRecord: record
+                )
+                conflictStore.addConflict(conflict)
+                // Skip overwrite for now; will be resolved by user
+                print("CloudKit: conflict detected for Vehicle \(uuid)")
+            } else if existing != nil && vehicle.lastEdited >= cloudLastEdited {
+                // Local is newer or equal; skip overwrite; still allow establishing relationships below
             } else {
                 if let typeString = record["CD_type"] as? String,
                    let type = VehicleType(rawValue: typeString) {
@@ -837,6 +994,7 @@ final class CloudKitSyncService {
             }
 
             let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
+            // Note: Trailer unlinking conflicts are excluded per requirements (waiting for WIP Fix)
             if existing != nil && trailer.lastEdited >= cloudLastEdited {
                 // Skip overwrite
             } else {
@@ -934,8 +1092,20 @@ final class CloudKitSyncService {
             }
 
             let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
-            if existing != nil && log.lastEdited >= cloudLastEdited {
-                // Skip overwrite
+            if existing != nil && hasConflict(localLastEdited: log.lastEdited, remoteLastEdited: cloudLastEdited) {
+                // Detected conflict: both local and remote have changes
+                let conflict = SyncConflict(
+                    entityType: "DriveLog",
+                    entityID: uuid,
+                    localLastEdited: log.lastEdited,
+                    remoteLastEdited: cloudLastEdited,
+                    remoteRecord: record
+                )
+                conflictStore.addConflict(conflict)
+                // Skip overwrite for now; will be resolved by user
+                print("CloudKit: conflict detected for DriveLog \(uuid)")
+            } else if existing != nil && log.lastEdited >= cloudLastEdited {
+                // Local is newer or equal; skip overwrite
             } else {
                 if let date = record["CD_date"] as? Date {
                     log.date = date
@@ -1041,8 +1211,20 @@ final class CloudKitSyncService {
             }
 
             let cloudLastEdited = (record["CD_lastEdited"] as? Date) ?? .distantPast
-            if existing != nil && checklist.lastEdited >= cloudLastEdited {
-                // Skip overwrite but still update relationships below
+            if existing != nil && hasConflict(localLastEdited: checklist.lastEdited, remoteLastEdited: cloudLastEdited) {
+                // Detected conflict: both local and remote have changes
+                let conflict = SyncConflict(
+                    entityType: "Checklist",
+                    entityID: uuid,
+                    localLastEdited: checklist.lastEdited,
+                    remoteLastEdited: cloudLastEdited,
+                    remoteRecord: record
+                )
+                conflictStore.addConflict(conflict)
+                // Skip overwrite for now; will be resolved by user
+                print("CloudKit: conflict detected for Checklist \(uuid)")
+            } else if existing != nil && checklist.lastEdited >= cloudLastEdited {
+                // Local is newer or equal; skip overwrite but still update relationships below
             } else {
                 if let typeString = record["CD_vehicleType"] as? String,
                    let type = VehicleType(rawValue: typeString) {
