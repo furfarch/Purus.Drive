@@ -85,6 +85,15 @@ final class CloudKitSyncService {
             let query = CKQuery(recordType: "CD_Deleted", predicate: NSPredicate(value: true))
             let records = try await fetchRecords(query: query)
             if records.isEmpty { return }
+            
+            // First, batch fetch all existing tombstones to avoid N+1 queries
+            let uuids = records.compactMap { rec -> UUID? in
+                guard let idStr = rec["entityID"] as? String else { return nil }
+                return UUID(uuidString: idStr)
+            }
+            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { uuid in uuids.contains(uuid.id) }))
+            let existingTombstonesByID = Dictionary(uniqueKeysWithValues: existingTombstones.map { ($0.id, $0) })
+            
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
             for rec in records {
                 guard let type = rec["entityType"] as? String,
@@ -95,17 +104,13 @@ final class CloudKitSyncService {
                 do { try localDelete(entityType: type, id: uuid, context: context) } catch { print("CloudKit: local delete error for \(type) id=\(idStr): \(error)") }
                 
                 // Create a local tombstone to prevent re-import of this record
-                do {
-                    let fetched = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { $0.id == uuid }))
-                    if let existing = fetched.first {
-                        existing.entityType = type
-                        existing.deletedAt = rec["deletedAt"] as? Date ?? .now
-                    } else {
-                        let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: rec["deletedAt"] as? Date ?? .now)
-                        context.insert(tombstone)
-                    }
-                } catch {
-                    print("CloudKit: failed to fetch/create tombstone for \(type) id=\(idStr): \(error)")
+                let deletedAt = rec["deletedAt"] as? Date ?? .now
+                if let existing = existingTombstonesByID[uuid] {
+                    existing.entityType = type
+                    existing.deletedAt = deletedAt
+                } else {
+                    let tombstone = DeletedRecord(entityType: type, id: uuid, deletedAt: deletedAt)
+                    context.insert(tombstone)
                 }
                 
                 // toDeleteFromCloud.append(rec.recordID) // Removed
