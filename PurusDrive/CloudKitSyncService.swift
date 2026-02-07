@@ -87,12 +87,12 @@ final class CloudKitSyncService {
             if records.isEmpty { return }
             
             // First, batch fetch all existing tombstones to avoid N+1 queries
-            let uuids = records.compactMap { rec -> UUID? in
+            let uuidSet = Set(records.compactMap { rec -> UUID? in
                 guard let idStr = rec["entityID"] as? String else { return nil }
                 return UUID(uuidString: idStr)
-            }
-            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { record in uuids.contains(record.id) }))
-            let existingTombstonesByID = Dictionary(uniqueKeysWithValues: existingTombstones.map { ($0.id, $0) })
+            })
+            let existingTombstones = try context.fetch(FetchDescriptor<DeletedRecord>(predicate: #Predicate { record in uuidSet.contains(record.id) }))
+            let existingTombstonesByID = Dictionary(existingTombstones.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             
             // var toDeleteFromCloud: [CKRecord.ID] = [] // Removed to retain tombstones in CloudKit
             for rec in records {
