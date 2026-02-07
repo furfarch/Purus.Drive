@@ -109,7 +109,12 @@ final class CloudKitSyncService {
         }
     }
 
-    private init() {}
+    private init() {
+        // Optional: listen for scrub zone request notification
+        NotificationCenter.default.addObserver(forName: .requestZoneScrub, object: nil, queue: nil) { [weak self] _ in
+            Task { await self?.scrubCloudZone() }
+        }
+    }
 
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
@@ -174,6 +179,19 @@ final class CloudKitSyncService {
         report.finishedAt = Date()
         await MainActor.run { reportStore.lastReport = report }
 
+        // Final verification: ensure all local tombstones are reflected in CloudKit
+        if let context = self.modelContext {
+            let tombstones = (try? context.fetch(FetchDescriptor<DeletedRecord>())) ?? []
+            for ts in tombstones {
+                let type = mappedRecordType(from: ts.entityType)
+                let currentName = "\(type)_\(ts.id.uuidString)"
+                let _ = await attemptDelete(recordName: currentName, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: currentName, zoneID: CKRecordZone.default().zoneID)
+                let _ = await attemptDelete(recordName: ts.id.uuidString, zoneID: recordZone.zoneID)
+                let _ = await attemptDelete(recordName: ts.id.uuidString, zoneID: CKRecordZone.default().zoneID)
+            }
+        }
+
         print("CloudKit: full sync completed")
         print("CloudKitSyncService: Full sync completed")
     }
@@ -209,6 +227,9 @@ final class CloudKitSyncService {
 
         // Then pull remote tombstones to avoid resurrecting records on this device
         await fetchRemoteTombstones()
+
+        // Also push any deletions propagated in fetchRemoteTombstones
+        await pushDeletions()
 
         // Now push each entity type independently — one failure shouldn't stop others
         do { try await pushTrailers(context: context) } catch { print("CloudKitSyncService: Push trailers error - \(error)") }
@@ -1254,11 +1275,111 @@ final class CloudKitSyncService {
             privateDatabase.add(op)
         }
     }
+
+
+    // MARK: - New Method: scrubCloudZone
+
+    /// Scrubs the CloudKit zone by removing duplicate records and those with invalid UUIDs.
+    func scrubCloudZone() async {
+        guard let context = modelContext else {
+            print("CloudKitSyncService: No model context set for scrubCloudZone")
+            return
+        }
+
+        let recordTypes = ["CD_Vehicle", "CD_Trailer", "CD_DriveLog", "CD_Checklist", "CD_ChecklistItem"]
+
+        for recordType in recordTypes {
+            do {
+                let records = try await fetchRecords(query: CKQuery(recordType: recordType, predicate: NSPredicate(value: true)))
+
+                var validRecordsByUUID: [UUID: CKRecord] = [:]
+                var invalidRecords: [CKRecord] = []
+                var duplicatesToDelete: [CKRecord] = []
+
+                for record in records {
+                    // Extract UUID from CD_id or from recordName
+                    var uuid: UUID? = nil
+                    if let idStr = record["CD_id"] as? String {
+                        uuid = UUID(uuidString: idStr)
+                    } else {
+                        // parse from recordName by stripping recordType prefix + "_"
+                        if record.recordID.recordName.hasPrefix(recordType + "_") {
+                            let suffix = String(record.recordID.recordName.dropFirst(recordType.count + 1))
+                            uuid = UUID(uuidString: suffix)
+                        }
+                    }
+
+                    guard let recordUUID = uuid else {
+                        invalidRecords.append(record)
+                        continue
+                    }
+
+                    // Check if new or older than stored record
+                    if let existing = validRecordsByUUID[recordUUID] {
+                        // Compare modificationDate to decide which to keep
+                        if let existingDate = existing.modificationDate, let currentDate = record.modificationDate {
+                            if currentDate > existingDate {
+                                duplicatesToDelete.append(existing)
+                                validRecordsByUUID[recordUUID] = record
+                            } else {
+                                duplicatesToDelete.append(record)
+                            }
+                        } else {
+                            // If modificationDate missing, keep existing and delete current
+                            duplicatesToDelete.append(record)
+                        }
+                    } else {
+                        validRecordsByUUID[recordUUID] = record
+                    }
+                }
+
+                // Delete invalid records and duplicates
+                var totalDeleted = 0
+                var totalKept = validRecordsByUUID.count
+                var totalInvalid = invalidRecords.count
+                var totalDuplicates = duplicatesToDelete.count
+
+                // Delete invalid records
+                if !invalidRecords.isEmpty {
+                    let idsToDelete = invalidRecords.map { $0.recordID }
+                    try await deleteRecords(recordIDs: idsToDelete)
+                    totalDeleted += invalidRecords.count
+                }
+
+                // Delete duplicates
+                if !duplicatesToDelete.isEmpty {
+                    let idsToDelete = duplicatesToDelete.map { $0.recordID }
+                    try await deleteRecords(recordIDs: idsToDelete)
+                    totalDeleted += duplicatesToDelete.count
+                }
+
+                print("CloudKit: scrubbed \(recordType): kept \(totalKept), deleted \(totalDeleted) (invalid \(totalInvalid), duplicates \(totalDuplicates))")
+            } catch {
+                print("CloudKit: scrubCloudZone error for \(recordType): \(error)")
+            }
+        }
+    }
+
+    private func deleteRecords(recordIDs: [CKRecord.ID]) async throws {
+        guard !recordIDs.isEmpty else { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let op = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: recordIDs)
+            op.isAtomic = false
+            op.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success: continuation.resume()
+                case .failure(let error): continuation.resume(throwing: error)
+                }
+            }
+            privateDatabase.add(op)
+        }
+    }
 }
 private extension Notification.Name {
     static let syncFetchedCount = Notification.Name("SyncFetchedCountNotification")
     static let syncPushedCount = Notification.Name("SyncPushedCountNotification")
     static let syncImportedCount = Notification.Name("SyncImportedCountNotification")
     static let syncError = Notification.Name("SyncErrorNotification")
+    static let requestZoneScrub = Notification.Name("RequestZoneScrubNotification")
 }
 
