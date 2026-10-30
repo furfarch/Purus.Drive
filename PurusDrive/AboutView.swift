@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct AboutView: View {
-    private var yearMonth: String {
-        let now = Date()
+    /// build month, read from the app binary's date (the current month was shown before)
+    private var buildMonth: String? {
+        guard let path = Bundle.main.executablePath,
+              let date = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return nil }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy MMMM" // e.g., 2025 December
-        return formatter.string(from: now)
+        return formatter.string(from: date)
     }
 
     private var appVersion: String {
@@ -23,7 +25,7 @@ struct AboutView: View {
                 Text("Purus Drive")
                     .font(.headline)
 
-                Text("\(yearMonth) • Personal Vehicle and Drive Log")
+                Text([buildMonth, "Personal Vehicle and Drive Log"].compactMap { $0 }.joined(separator: " • "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 

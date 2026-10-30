@@ -76,6 +76,9 @@ struct PurusDriveApp: App {
         // This handles iOS-on-Mac where UserDefaults persist after app deletion
         if !localStoreExists {
             UserDefaults.standard.removeObject(forKey: Self.storageLocationKey)
+            // reset together with the mode: a stale "icloud" here would start "Migrating to Local" after a reinstall/reset
+            UserDefaults.standard.set(StorageLocation.local.rawValue, forKey: Self.lastStorageModeKey)
+            UserDefaults.standard.removeObject(forKey: CloudKitSyncService.lastSyncKey)
         }
 
         let schema = Schema([
@@ -124,22 +127,11 @@ struct PurusDriveApp: App {
             // Set up the sync service with the model context
             cloudSyncService.setModelContext(c.mainContext)
         } catch {
-            // Fallback to in-memory
-            let inMemoryConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            if let c = try? ModelContainer(for: schema, configurations: [inMemoryConfig]) {
-                self.container = c
-                self.initErrorMessage = "Local storage failed, using in-memory storage."
-                cloudSyncService.setModelContext(c.mainContext)
-            } else {
-                self.container = nil
-                self.initErrorMessage = "Could not open any storage. Error: \(error.localizedDescription)"
-            }
+            // no in-memory fallback: edits would be lost silently and an empty store could sync; show the error instead
+            self.container = nil
+            self.initErrorMessage = "Could not open the local database. Error: \(error.localizedDescription)"
             CloudKitDiagnostics.containerCreationResult = "Failed"
             CloudKitDiagnostics.containerError = error.localizedDescription
-        }
-
-        if let container {
-            ChecklistOwnershipMigration.runIfNeeded(using: container)
         }
     }
 
@@ -171,14 +163,10 @@ struct PurusDriveApp: App {
                         }
                     }
                     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestFullSyncNotification"))) { _ in
+                        guard Self.isICloudMode else { return }
                         migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
-                        SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
                         Task { @MainActor in
                             await CloudKitSyncService.shared.performFullSync()
-                            if var report = SyncReportStore.shared.lastReport {
-                                report.finishedAt = Date()
-                                SyncReportStore.shared.lastReport = report
-                            }
                             migrationProgress.succeed(message: "Sync complete")
                         }
                     }
@@ -196,43 +184,25 @@ struct PurusDriveApp: App {
         guard current != last else { return }
         UserDefaults.standard.set(current, forKey: Self.lastStorageModeKey)
 
-        if current == StorageLocation.icloud.rawValue {
-            migrationProgress.start(title: "Migrating to iCloud…", message: "Uploading local data")
-            await cloudSyncService.pushAllToCloud()
-            migrationProgress.update(message: "Syncing with iCloud")
-            await cloudSyncService.performFullSync()
-            migrationProgress.succeed(message: "Now syncing across devices")
-        } else {
-            migrationProgress.start(title: "Migrating to Local…", message: "Fetching from iCloud")
-            await cloudSyncService.fetchAllFromCloud()
-            migrationProgress.update(message: "Removing data from iCloud")
-            await cloudSyncService.deleteAllFromCloud()
-            migrationProgress.succeed(message: "iCloud cleared; local only")
-        }
+        // to iCloud: the full sync that always follows this call uploads the local data
+        guard current != StorageLocation.icloud.rawValue else { return }
+        // to Local: take the latest iCloud copy; iCloud data is never deleted (other devices still use it)
+        migrationProgress.start(title: "Migrating to Local…", message: "Fetching from iCloud")
+        await cloudSyncService.fetchAllFromCloud()
+        migrationProgress.succeed(message: "Local only")
+    }
+
+    private static var isICloudMode: Bool {
+        UserDefaults.standard.string(forKey: storageLocationKey) == StorageLocation.icloud.rawValue
     }
 
     @MainActor
     private func syncIfCloudEnabled() async {
-        let storageRaw = UserDefaults.standard.string(forKey: Self.storageLocationKey) ?? StorageLocation.local.rawValue
-        let wantsICloud = (storageRaw == StorageLocation.icloud.rawValue)
-        guard wantsICloud else { return }
+        guard Self.isICloudMode else { return }
 
-        migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
-        var report = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
-        SyncReportStore.shared.lastReport = report
-
-        let migrationFlagKey = "didInitialCloudMigration"
-        if UserDefaults.standard.bool(forKey: migrationFlagKey) == false {
-            migrationProgress.update(message: "Uploading local data (first-time)")
-            await cloudSyncService.pushAllToCloud()
-            UserDefaults.standard.set(true, forKey: migrationFlagKey)
-        }
-
-        migrationProgress.update(message: "Running full sync")
+        // the sync service owns the sync report
+        migrationProgress.start(title: "Syncing with iCloud…", message: "Running full sync")
         await cloudSyncService.performFullSync()
-
-        report.finishedAt = Date()
-        SyncReportStore.shared.lastReport = report
         migrationProgress.succeed(message: "Sync complete")
     }
 }
@@ -251,22 +221,12 @@ private struct SyncOverlayModifier: ViewModifier {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncFetchedCountNotification"))) { output in
                     if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
-                        if let last = SyncReportStore.shared.lastReport {
-                            var updated = last
-                            updated.fetched[type, default: 0] += count
-                            SyncReportStore.shared.lastReport = updated
-                            migrationProgress.update(message: "Fetched \(count) \(type)")
-                        }
+                        migrationProgress.update(message: "Fetched \(count) \(type)")
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncPushedCountNotification"))) { output in
                     if let info = (output.userInfo as? [String: Any]), let type = info["type"] as? String, let count = info["count"] as? Int {
-                        if let last = SyncReportStore.shared.lastReport {
-                            var updated = last
-                            updated.pushed[type, default: 0] += count
-                            SyncReportStore.shared.lastReport = updated
-                            migrationProgress.update(message: "Uploaded \(count) \(type)")
-                        }
+                        migrationProgress.update(message: "Uploaded \(count) \(type)")
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncImportedCountNotification"))) { output in
@@ -276,26 +236,9 @@ private struct SyncOverlayModifier: ViewModifier {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncStartedNotification"))) { _ in
                     migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
-                    SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
                 }
                 .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SyncCompletedNotification"))) { _ in
-                    if var report = SyncReportStore.shared.lastReport {
-                        report.finishedAt = Date()
-                        SyncReportStore.shared.lastReport = report
-                    }
                     migrationProgress.succeed(message: "Sync complete")
-                }
-                .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RequestFullSyncNotification"))) { _ in
-                    migrationProgress.start(title: "Syncing with iCloud…", message: "Starting")
-                    SyncReportStore.shared.lastReport = SyncReport(startedAt: Date(), finishedAt: nil, mode: "iCloud")
-                    Task { @MainActor in
-                        await CloudKitSyncService.shared.performFullSync()
-                        if var report = SyncReportStore.shared.lastReport {
-                            report.finishedAt = Date()
-                            SyncReportStore.shared.lastReport = report
-                        }
-                        migrationProgress.succeed(message: "Sync complete")
-                    }
                 }
         } else {
             content

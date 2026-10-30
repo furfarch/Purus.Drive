@@ -17,8 +17,6 @@ struct MigrationOverlayView: View {
                         overlayBox(icon: AnyView(ProgressView()), title: title, subtitle: message, tint: .accentColor)
                     case .success(let message):
                         overlayBox(icon: AnyView(Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)), title: (message ?? "Done"), subtitle: nil, tint: .green)
-                    case .failure(let error):
-                        overlayBox(icon: AnyView(Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)), title: "Migration failed", subtitle: error, tint: .yellow)
                     }
                 }
                 .animation(.default, value: progress.isVisible)

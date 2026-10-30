@@ -22,14 +22,6 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         case .html: return "html"
         }
     }
-
-    var mimeType: String {
-        switch self {
-        case .json: return "application/json"
-        case .txt: return "text/plain"
-        case .html: return "text/html"
-        }
-    }
 }
 
 enum ExportHelpers {
@@ -57,12 +49,13 @@ enum ExportHelpers {
     static func checklistHTML(_ checklist: Checklist) -> String {
         let grouped = Dictionary(grouping: checklist.items ?? [], by: { $0.section })
 
-        var body = "<h1>Checklist: \(escape(checklist.title))</h1>"
+        // a fragment: it is embedded in the export page, which owns <html>/<body>
+        var body = "<h3>Checklist: \(escape(checklist.title))</h3>"
         body += "<p><strong>Vehicle Type:</strong> \(escape(checklist.vehicleType.displayName))<br/>"
         body += "<strong>Last Edited:</strong> \(escape(ISO8601DateFormatter().string(from: checklist.lastEdited)))</p>"
 
         for section in grouped.keys.sorted() {
-            body += "<h2>\(escape(section))</h2><ul>"
+            body += "<h4>\(escape(section))</h4><ul>"
             for item in grouped[section] ?? [] {
                 let note = item.note.map { " <em>(\(escape($0)))</em>" } ?? ""
                 body += "<li>[\(escape(symbol(for: item.state)))] \(escape(item.title))\(note)</li>"
@@ -70,41 +63,7 @@ enum ExportHelpers {
             body += "</ul>"
         }
 
-        return """
-        <!doctype html>
-        <html><head><meta charset=\"utf-8\"><title>\(escape(checklist.title))</title></head>
-        <body>\(body)</body></html>
-        """
-    }
-
-    static func checklistJSONData(_ checklist: Checklist) throws -> Data {
-        // Encode a simplified shape so we don't rely on SwiftData model encoding.
-        struct DTO: Codable {
-            struct ItemDTO: Codable {
-                var id: UUID
-                var section: String
-                var title: String
-                var state: String
-                var note: String?
-            }
-            var id: UUID
-            var title: String
-            var vehicleType: String
-            var lastEdited: String
-            var items: [ItemDTO]
-        }
-
-        let dto = DTO(
-            id: checklist.id,
-            title: checklist.title,
-            vehicleType: checklist.vehicleType.rawValue,
-            lastEdited: ISO8601DateFormatter().string(from: checklist.lastEdited),
-            items: (checklist.items ?? []).map {
-                .init(id: $0.id, section: $0.section, title: $0.title, state: $0.state.rawValue, note: $0.note)
-            }
-        )
-
-        return try JSONEncoder().encode(dto)
+        return body
     }
 
     // MARK: - Helpers

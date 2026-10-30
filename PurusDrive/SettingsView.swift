@@ -119,6 +119,8 @@ struct SettingsView: View {
 
     @State private var showRestartHint = false
     @State private var showICloudUnavailableAlert = false
+    /// iCloud picked before the status check finished; decided when it does
+    @State private var pendingICloudSwitch = false
 
     @State private var showResetConfirm = false
     @State private var showResetFailed = false
@@ -129,6 +131,11 @@ struct SettingsView: View {
             get: { StorageLocation(rawValue: storageLocationRaw) ?? .local },
             set: { newValue in
                 if newValue == .icloud, !cloudStatus.isICloudAvailable {
+                    if cloudStatus.accountStatusRaw.isEmpty {
+                        pendingICloudSwitch = true
+                        cloudStatus.refresh()
+                        return
+                    }
                     storageLocationRaw = StorageLocation.local.rawValue
                     showICloudUnavailableAlert = true
                     return
@@ -239,26 +246,6 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-#if false
-            Section("About") {
-                LabeledContent("Version") {
-                    Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-")
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Build") {
-                    Text(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-")
-                        .foregroundStyle(.secondary)
-                }
-                LabeledContent("Bundle Identifier") {
-                    Text(Bundle.main.bundleIdentifier ?? "-")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-#endif
-
             Section {
                 Toggle(isOn: $faceIDLock) {
                     Label("Face ID lock", systemImage: "faceid")
@@ -346,6 +333,11 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .onAppear { cloudStatus.refresh() }
+        .onChange(of: cloudStatus.accountStatusRaw) { _, raw in
+            guard pendingICloudSwitch, !raw.isEmpty else { return }
+            pendingICloudSwitch = false
+            selectionBinding.wrappedValue = .icloud
+        }
         .alert("Restart required", isPresented: $showRestartHint) {
             Button("OK", role: .cancel) {}
         } message: {

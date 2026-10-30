@@ -39,7 +39,6 @@ struct PlateScannerView: View {
             // Use the CameraPickerUniversal implementation from CarPhotoPickerView.swift
             CameraPickerUniversal { image in
                 // Keep the sheet open while processing so the user can see progress and results
-                print("DEBUG: PlateScanner CameraPickerUniversal completion invoked; image=\(image != nil)")
                 // Dismiss the picker immediately; show progress/results in the parent view.
                 DispatchQueue.main.async {
                     showingCamera = false
@@ -58,7 +57,6 @@ struct PlateScannerView: View {
 
                 PlateRecognizer.recognize(from: image) { result in
                     DispatchQueue.main.async {
-                        print("DEBUG: PlateRecognizer result best=\(result.bestMatch ?? "<nil>") candidates=\(result.rawCandidates)")
                         isProcessing = false
                         rawCandidates = result.rawCandidates
 

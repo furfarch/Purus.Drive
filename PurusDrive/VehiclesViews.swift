@@ -73,19 +73,7 @@ struct VehiclesListView: View {
                 }
                 .swipeActions {
                     Button(role: .destructive) {
-                        CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
-                        // Immediate local cascade: delete trailer checklists and their items; unlink from any vehicle
-                        if let cls = t.checklists {
-                            for c in cls {
-                                for i in (c.items ?? []) { modelContext.delete(i) }
-                                modelContext.delete(c)
-                            }
-                        }
-                        t.linkedVehicle?.trailer = nil
-                        modelContext.delete(t)
-                        do { try modelContext.save() } catch { print("Error deleting trailer from list: \(error)") }
-                        Task { await CloudKitSyncService.shared.pushDeletions() }
-                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
+                        deleteTrailerCascade(t, in: modelContext)
                     } label: { Label("Delete", systemImage: "trash") }
                 }
             }
@@ -137,20 +125,7 @@ struct VehiclesListView: View {
                 }
                 .swipeActions {
                     Button(role: .destructive) {
-                        CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
-                        // Immediate local cascade: delete drive logs, checklists and their items; unlink trailer
-                        if let logs = v.driveLogs { for l in logs { modelContext.delete(l) } }
-                        if let cls = v.checklists {
-                            for c in cls {
-                                for i in (c.items ?? []) { modelContext.delete(i) }
-                                modelContext.delete(c)
-                            }
-                        }
-                        if let tr = v.trailer { tr.linkedVehicle = nil; v.trailer = nil }
-                        modelContext.delete(v)
-                        do { try modelContext.save() } catch { print("Error deleting vehicle from list: \(error)") }
-                        Task { await CloudKitSyncService.shared.pushDeletions() }
-                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
+                        deleteVehicleCascade(v, in: modelContext)
                     } label: { Label("Delete", systemImage: "trash") }
                 }
 
@@ -282,7 +257,7 @@ extension VehiclesListView {
                 .opacity(0.85)
         } else {
             // choose base image (either system or asset)
-            let (base, needsTemplateTint) = iconBase(for: v.type)
+            let (base, needsTemplateTint) = v.type.icon
 
             GeometryReader { geo in
                 ZStack {
@@ -319,29 +294,54 @@ extension VehiclesListView {
         }
     }
 
-    // Helper to choose base image and whether it needs template tinting
-    fileprivate func iconBase(for type: VehicleType) -> (Image, Bool) {
-        switch type {
-        case .car:
-            return (Image(systemName: "car"), false)
-        case .van:
-            return (Image("VAN"), true)
-        case .truck:
-            return (Image(systemName: "truck.box"), false)
-        case .trailer:
-            return (Image("TRAILER_CAR"), true)
-        case .camper:
-            return (Image("CAMPER"), true)
-        case .boat:
-            return (Image(systemName: "sailboat"), false)
-        case .motorbike:
-            return (Image("MOTORBIKE"), true)
-        case .scooter:
-            return (Image("SCOOTER"), true)
-        case .other:
-            return (Image(systemName: "questionmark.circle"), false)
+}
+
+extension VehicleType {
+    /// base image and whether it is an asset that needs template tinting
+    fileprivate var icon: (Image, Bool) {
+        switch self {
+        case .car: return (Image(systemName: "car"), false)
+        case .van: return (Image("VAN"), true)
+        case .truck: return (Image(systemName: "truck.box"), false)
+        case .trailer: return (Image("TRAILER_CAR"), true)
+        case .camper: return (Image("CAMPER"), true)
+        case .boat: return (Image(systemName: "sailboat"), false)
+        case .motorbike: return (Image("MOTORBIKE"), true)
+        case .scooter: return (Image("SCOOTER"), true)
+        case .other: return (Image(systemName: "questionmark.circle"), false)
         }
     }
+}
+
+/// Deletes a vehicle with its drive logs, checklists and items, unlinks its trailer and tombstones it for iCloud.
+@MainActor
+private func deleteVehicleCascade(_ v: Vehicle, in context: ModelContext) {
+    CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: v.id)
+    for l in v.driveLogs ?? [] { context.delete(l) }
+    for c in v.checklists ?? [] {
+        for i in c.items ?? [] { context.delete(i) }
+        context.delete(c)
+    }
+    if let tr = v.trailer { tr.linkedVehicle = nil; v.trailer = nil }
+    context.delete(v)
+    do { try context.save() } catch { print("ERROR: failed deleting vehicle: \(error)") }
+    Task { await CloudKitSyncService.shared.pushDeletions() }
+    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
+}
+
+/// Deletes a trailer with its checklists and items, unlinks it from its vehicle and tombstones it for iCloud.
+@MainActor
+private func deleteTrailerCascade(_ t: Trailer, in context: ModelContext) {
+    CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: t.id)
+    for c in t.checklists ?? [] {
+        for i in c.items ?? [] { context.delete(i) }
+        context.delete(c)
+    }
+    t.linkedVehicle?.trailer = nil
+    context.delete(t)
+    do { try context.save() } catch { print("ERROR: failed deleting trailer: \(error)") }
+    Task { await CloudKitSyncService.shared.pushDeletions() }
+    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
 }
 
 struct VehicleFormView: View {
@@ -357,8 +357,11 @@ struct VehicleFormView: View {
 
     // photo + scanner state
     @State private var carPhoto: UIImage? = nil
+    /// downscaled JPEG of a newly picked photo; written only on Save
+    @State private var newPhotoData: Data? = nil
+    /// Remove Photo is applied on Save so Cancel can undo it
+    @State private var photoRemoved = false
     @State private var showingPlateScanner = false
-    @State private var showingCarPhotoPicker = false
     @State private var saveErrorMessage: String? = nil
 
     @State private var showingNewDriveLog = false
@@ -395,10 +398,7 @@ struct VehicleFormView: View {
         _plate = State(initialValue: vehicle.plate)
         _notes = State(initialValue: vehicle.notes)
         _trailer = State(initialValue: vehicle.trailer)
-
-        if let data = vehicle.photoData, let img = UIImage(data: data) {
-            _carPhoto = State(initialValue: img)
-        }
+        // the photo is decoded in .task: list rows build this view eagerly
     }
 
     /// Always edit the context-attached instance.
@@ -497,15 +497,7 @@ struct VehicleFormView: View {
                         }
                         .swipeActions {
                             Button(role: .destructive) {
-                                // Clear any log references first.
-                                for log in allDriveLogs where log.checklist === cl { log.checklist = nil }
-                                CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
-                                // Immediate local cascade: delete items
-                                for i in (cl.items ?? []) { modelContext.delete(i) }
-                                modelContext.delete(cl)
-                                do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
-                                Task { await CloudKitSyncService.shared.pushDeletions() }
-                                NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
+                                deleteChecklistLocally(cl, in: modelContext)
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -540,20 +532,17 @@ struct VehicleFormView: View {
     }
 
     var body: some View {
+        // after Delete the object is gone while the screen is still closing; reading it would crash
+        if let vehicle, vehicle.modelContext == nil { Color.clear } else { content }
+    }
+
+    private var content: some View {
         Form {
             Section("Type") {
                 // All options in the same view (no submenu)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
-                        typeButton(.car, label: "Car", systemName: "car")
-                        typeButton(.van, label: "Van", assetName: "VAN")
-                        typeButton(.truck, label: "Truck", systemName: "truck.box")
-                        typeButton(.trailer, label: "Trailer", assetName: "TRAILER_CAR")
-                        typeButton(.camper, label: "Camper", assetName: "CAMPER")
-                        typeButton(.boat, label: "Boat", systemName: "sailboat")
-                        typeButton(.scooter, label: "Scooter", assetName: "SCOOTER")
-                        typeButton(.motorbike, label: "Motorbike", assetName: "MOTORBIKE")
-                        typeButton(.other, label: "Other", systemNameFallback: "questionmark.circle")
+                        ForEach([VehicleType.car, .van, .truck, .trailer, .camper, .boat, .scooter, .motorbike, .other]) { typeButton($0) }
                     }
                     .padding(.vertical, 4)
                     .frame(minHeight: 56)
@@ -585,7 +574,7 @@ struct VehicleFormView: View {
             // Trailer linking rules:
             // - Never allow: Trailer, Boat, Motorbike/Scooter
             // - Allow: Car, Van, Truck, Camper, Other
-            if type == .car || type == .van || type == .truck || type == .camper || type == .other {
+            if allowsTrailer {
                 Section {
                     Fold(title: "Trailer", summary: trailer.map { $0.brandModel.isEmpty ? ($0.plate.isEmpty ? "Trailer" : $0.plate) : $0.brandModel } ?? "None") {
                         TrailerPickerInline(selection: $trailer)
@@ -616,31 +605,19 @@ struct VehicleFormView: View {
                         .cornerRadius(12)
                 }
                 // keep inline picker as well (set on main thread to avoid race conditions)
-                CarPhotoPickerView { img in
-                    DispatchQueue.main.async {
-                        if let img = img {
-                            self.carPhoto = img
-                            let vid = vehicle?.id.uuidString ?? "new"
-                            print("DEBUG: VehicleFormView carPhoto set (vehicle id=\(vid))")
-                        } else {
-                            print("DEBUG: VehicleFormView CarPhotoPicker returned nil")
-                        }
-                    }
+                CarPhotoPickerView { data in
+                    guard let data else { return }
+                    newPhotoData = data
+                    carPhoto = UIImage(data: data)
+                    photoRemoved = false
                 }
 
                 // allow removing an existing photo when editing
-                if vehicle != nil && (carPhoto != nil || vehicle?.photoData != nil) {
+                if vehicle != nil && carPhoto != nil {
                     Button(role: .destructive) {
-                        if let vehicle = vehicle {
-                            vehicle.photoData = nil
-                            carPhoto = nil
-                            do {
-                                try modelContext.save()
-                                print("DEBUG: removed photo for vehicle id=\(vehicle.id)")
-                            } catch {
-                                print("DEBUG: failed to remove photo: \(error)")
-                            }
-                        }
+                        carPhoto = nil
+                        newPhotoData = nil
+                        photoRemoved = true
                     } label: {
                         Label("Remove Photo", systemImage: "trash")
                     }
@@ -680,23 +657,8 @@ struct VehicleFormView: View {
         }
         .confirmationDialog("Delete this vehicle?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                if let vehicle {
-                        CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id)
-                        // Immediate local cascade: delete drive logs, checklists and their items; unlink trailer
-                        if let logs = vehicle.driveLogs { for l in logs { modelContext.delete(l) } }
-                        if let cls = vehicle.checklists {
-                            for c in cls {
-                                for i in (c.items ?? []) { modelContext.delete(i) }
-                                modelContext.delete(c)
-                            }
-                        }
-                        if let tr = vehicle.trailer { tr.linkedVehicle = nil; vehicle.trailer = nil }
-                        modelContext.delete(vehicle)
-                        try? modelContext.save()
-                        Task { await CloudKitSyncService.shared.pushDeletions() }
-                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
-                }
                 close()
+                if let vehicle { deleteVehicleCascade(vehicle, in: modelContext) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -720,11 +682,9 @@ struct VehicleFormView: View {
                         if newDriveLogToEdit == nil {
                             ProgressView()
                                 .onAppear {
+                                    // saved and synced only when the user taps Save in the editor
                                     let new = DriveLog(vehicle: vehicle)
                                     modelContext.insert(new)
-                                    do { try modelContext.save() } catch { print("ERROR: failed inserting new drive log: \(error)") }
-                                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
-                                    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                                     newDriveLogToEdit = new
                                 }
                         } else if let newDriveLogToEdit {
@@ -740,7 +700,14 @@ struct VehicleFormView: View {
                 }
             }
         }
+        .task {
+            if carPhoto == nil, !photoRemoved, newPhotoData == nil, let data = vehicle?.photoData {
+                carPhoto = UIImage(data: data)
+            }
+        }
     }
+
+    private var allowsTrailer: Bool { [.car, .van, .truck, .camper, .other].contains(type) }
 
     private func close() { if let onClose { onClose() } else { dismiss() } }
 
@@ -764,9 +731,8 @@ struct VehicleFormView: View {
                         notes: notes,
                         lastEdited: now
                     )
-                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                        newTrailer.photoData = data
-                    }
+                    newTrailer.photoData = photoRemoved ? nil : (newPhotoData ?? vehicle.photoData)
+                    modelContext.insert(newTrailer)
 
                     // Unlink any trailer that was attached to this vehicle
                     if let previousTrailer = vehicle.trailer {
@@ -782,22 +748,14 @@ struct VehicleFormView: View {
                         }
                     }
 
-                    // Delete associated drive logs (trailers don't have drive logs)
-                    if let driveLogs = vehicle.driveLogs {
-                        for log in driveLogs {
-                            modelContext.delete(log)
-                        }
+                    // Tombstone the vehicle without cascade (its checklists just moved to the trailer),
+                    // then tombstone + delete its drive logs (trailers don't have drive logs).
+                    CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id, cascade: false, autoSync: false)
+                    for log in vehicle.driveLogs ?? [] {
+                        CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id, autoSync: false)
+                        modelContext.delete(log)
                     }
 
-                    // Tombstone the vehicle and its drive logs so deletions sync to CloudKit
-                    CloudKitSyncService.shared.markDeleted(entityType: "Vehicle", id: vehicle.id)
-                    if let driveLogs = vehicle.driveLogs {
-                        for log in driveLogs {
-                            CloudKitSyncService.shared.markDeleted(entityType: "DriveLog", id: log.id)
-                        }
-                    }
-
-                    modelContext.insert(newTrailer)
                     modelContext.delete(vehicle)
                     try modelContext.save()
                     // Request immediate sync after converting vehicle to trailer
@@ -809,7 +767,7 @@ struct VehicleFormView: View {
 
                 // Resolve the selected trailer to a managed instance in this context.
                 var managedTrailer: Trailer? = nil
-                if let sel = trailer {
+                if allowsTrailer, let sel = trailer {
                     let selId = sel.id
                     if let fetched = try? modelContext.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == selId })).first {
                         managedTrailer = fetched
@@ -835,9 +793,7 @@ struct VehicleFormView: View {
                 }
                 managedTrailer?.linkedVehicle = vehicle
 
-                if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                    vehicle.photoData = data
-                }
+                if let newPhotoData { vehicle.photoData = newPhotoData } else if photoRemoved { vehicle.photoData = nil }
                 try modelContext.save()
                 NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
             } else {
@@ -845,16 +801,14 @@ struct VehicleFormView: View {
                 // so it can be linked to other vehicles later.
                 if type == .trailer {
                     let newTrailer = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: now)
-                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                        newTrailer.photoData = data
-                    }
+                    newTrailer.photoData = newPhotoData
                     modelContext.insert(newTrailer)
                     try modelContext.save()
                     NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
                 } else {
                     // Resolve selected trailer to managed instance for the new vehicle
                     var managedTrailer: Trailer? = nil
-                    if let sel = trailer {
+                    if allowsTrailer, let sel = trailer {
                         let selId = sel.id
                         if let fetched = try? modelContext.fetch(FetchDescriptor<Trailer>(predicate: #Predicate { $0.id == selId })).first {
                             managedTrailer = fetched
@@ -868,9 +822,7 @@ struct VehicleFormView: View {
 
                     managedTrailer?.linkedVehicle = new
 
-                    if let img = carPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                        new.photoData = data
-                    }
+                    new.photoData = newPhotoData
                     modelContext.insert(new)
                     try modelContext.save()
                     NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
@@ -887,16 +839,13 @@ struct VehicleFormView: View {
         }
     }
 
-    private func typeButton(_ t: VehicleType, label: String, assetName: String? = nil, systemName: String? = nil, systemNameFallback: String? = nil) -> some View {
+    private func typeButton(_ t: VehicleType) -> some View {
         Button {
             type = t
-            print("DEBUG: selected type=\(t)")
         } label: {
             VStack(spacing: 6) {
-                if let assetName { Image(assetName).resizable().scaledToFit().frame(width: 28, height: 28) }
-                else if let systemName { Image(systemName: systemName).resizable().scaledToFit().frame(width: 28, height: 28) }
-                else if let fallback = systemNameFallback { Image(systemName: fallback).resizable().scaledToFit().frame(width: 28, height: 28) }
-                Text(label).font(.caption)
+                t.icon.0.resizable().scaledToFit().frame(width: 28, height: 28)
+                Text(t.displayName).font(.caption)
             }
             .padding(8)
             .background(type == t ? Color.accentColor.opacity(0.15) : Color.clear)
@@ -982,6 +931,8 @@ private struct NewTrailerFormView: View {
     @State private var notes: String
     @State private var showingPlateScanner = false
     @State private var trailerPhoto: UIImage? = nil
+    /// downscaled JPEG of a newly picked photo; written only on Save
+    @State private var newPhotoData: Data? = nil
 
     @Query(sort: \Checklist.lastEdited, order: .reverse) private var allChecklists: [Checklist]
     @State private var newChecklistToEdit: Checklist? = nil
@@ -1002,9 +953,7 @@ private struct NewTrailerFormView: View {
         _color = State(initialValue: existing.color)
         _plate = State(initialValue: existing.plate)
         _notes = State(initialValue: existing.notes)
-        if let data = existing.photoData, let img = UIImage(data: data) {
-            _trailerPhoto = State(initialValue: img)
-        }
+        // the photo is decoded in .task: list rows build this view eagerly
     }
 
     private func close() { if let onClose { onClose() } else { dismiss() } }
@@ -1015,6 +964,11 @@ private struct NewTrailerFormView: View {
     }
 
     var body: some View {
+        // after Delete the object is gone while the screen is still closing; reading it would crash
+        if let existing, existing.modelContext == nil { Color.clear } else { content }
+    }
+
+    private var content: some View {
         Form {
             Section("Details") {
                 TextField("Brand / Model", text: $brandModel)
@@ -1046,8 +1000,10 @@ private struct NewTrailerFormView: View {
                         .cornerRadius(12)
                 }
 
-                CarPhotoPickerView { img in
-                    DispatchQueue.main.async { trailerPhoto = img }
+                CarPhotoPickerView { data in
+                    guard let data else { return }
+                    newPhotoData = data
+                    trailerPhoto = UIImage(data: data)
                 }
               }
             }
@@ -1116,9 +1072,7 @@ private struct NewTrailerFormView: View {
                         existing.plate = plate
                         existing.notes = notes
                         existing.lastEdited = .now
-                        if let img = trailerPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                            existing.photoData = data
-                        }
+                        if let newPhotoData { existing.photoData = newPhotoData }
                         try? modelContext.save()
                         // Trigger CloudKit sync after save
                         Task { await CloudKitSyncService.shared.pushAllToCloud() }
@@ -1126,9 +1080,7 @@ private struct NewTrailerFormView: View {
                         close()
                     } else {
                         let t = Trailer(brandModel: brandModel, color: color, plate: plate, notes: notes, lastEdited: .now)
-                        if let img = trailerPhoto, let data = img.jpegData(compressionQuality: 0.8) {
-                            t.photoData = data
-                        }
+                        t.photoData = newPhotoData
                         onCreate?(t)
                         // Trigger CloudKit sync after save
                         Task { await CloudKitSyncService.shared.pushAllToCloud() }
@@ -1142,22 +1094,8 @@ private struct NewTrailerFormView: View {
         }
         .confirmationDialog("Delete this trailer?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                if let existing {
-                        CloudKitSyncService.shared.markDeleted(entityType: "Trailer", id: existing.id)
-                        // Immediate local cascade: delete trailer checklists and their items; unlink from any vehicle
-                        if let cls = existing.checklists {
-                            for c in cls {
-                                for i in (c.items ?? []) { modelContext.delete(i) }
-                                modelContext.delete(c)
-                            }
-                        }
-                        existing.linkedVehicle?.trailer = nil
-                        modelContext.delete(existing)
-                        try? modelContext.save()
-                        Task { await CloudKitSyncService.shared.pushDeletions() }
-                        NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
-                }
                 close()
+                if let existing { deleteTrailerCascade(existing, in: modelContext) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -1169,6 +1107,11 @@ private struct NewTrailerFormView: View {
             }
             .environment(\.modelContext, modelContext)
         }
+        .task {
+            if trailerPhoto == nil, newPhotoData == nil, let data = existing?.photoData {
+                trailerPhoto = UIImage(data: data)
+            }
+        }
     }
 }
 
@@ -1177,23 +1120,3 @@ private enum VehicleDriveLogTitleFormatter {
         date.formatted(date: .abbreviated, time: .shortened)
     }
 }
-
-private struct StorageModeBadge: View {
-    @State private var isICloud: Bool = {
-        let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
-        return raw == StorageLocation.icloud.rawValue
-    }()
-    var body: some View {
-        let symbol = isICloud ? "icloud" : "internaldrive"
-        let color: Color = isICloud ? .blue : .secondary
-        Image(systemName: symbol)
-            .foregroundStyle(color)
-            .accessibilityLabel(isICloud ? "Using iCloud" : "Using Local Storage")
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                // refresh on foreground
-                let raw = UserDefaults.standard.string(forKey: "storageLocation") ?? StorageLocation.local.rawValue
-                isICloud = (raw == StorageLocation.icloud.rawValue)
-            }
-    }
-}
-

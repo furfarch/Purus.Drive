@@ -1,7 +1,6 @@
 import Foundation
 import Vision
 import UIKit
-import AVFoundation
 
 struct PlateRecognitionResult {
     let rawCandidates: [String]
@@ -16,21 +15,20 @@ enum PlateRecognizer {
     static func recognize(from image: UIImage, completion: @escaping (PlateRecognitionResult) -> Void) {
         let request = VNRecognizeTextRequest { req, err in
             if let err = err {
-                print("DEBUG: VNRecognizeTextRequest error: \(err)")
+                print("PlateRecognizer: text request failed: \(err)")
             }
             let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
-            print("DEBUG: PlateRecognizer found observations: \(observations.count)")
 
             let candidateTuples: [(string: String, confidence: Float)] = observations.flatMap { obs in
                 obs.topCandidates(5).map { ($0.string, $0.confidence) }
             }
-            print("DEBUG: PlateRecognizer raw candidates: \(candidateTuples.map { "\($0.string) (\($0.confidence))" })")
 
             // Generate multiple normalized variants per candidate and score them.
             var scored: [(plate: String, score: Double)] = []
             for (raw, conf) in candidateTuples {
-                for variant in normalizeVariants(raw) {
-                    let s = scorePlateCandidate(variant, baseConfidence: Double(conf))
+                for (variant, substitutions) in normalizeVariants(raw) {
+                    // each OCR-confusion swap is a guess; without this "AG 1234" loses to "A61234"
+                    let s = scorePlateCandidate(variant, baseConfidence: Double(conf)) - Double(substitutions) * 6
                     scored.append((variant, s))
                 }
             }
@@ -58,11 +56,13 @@ enum PlateRecognizer {
         request.usesLanguageCorrection = false
         request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR", "it-IT", "nl-NL"]
 
+        // camera photos are usually stored rotated (.right); Vision needs the orientation to read them upright
+        let orientation = CGImagePropertyOrientation(image.imageOrientation)
         if let cgImage = image.cgImage {
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try handler.perform([request]) } catch {
-                    print("DEBUG: VNImageRequestHandler.perform failed: \(error)")
+                    print("PlateRecognizer: perform failed: \(error)")
                     DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
                 }
             }
@@ -70,83 +70,25 @@ enum PlateRecognizer {
         }
 
         if let ci = CIImage(image: image) {
-            let handler = VNImageRequestHandler(ciImage: ci, options: [:])
+            let handler = VNImageRequestHandler(ciImage: ci, orientation: orientation, options: [:])
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try handler.perform([request]) } catch {
-                    print("DEBUG: VNImageRequestHandler.perform failed (CIImage): \(error)")
+                    print("PlateRecognizer: perform failed (CIImage): \(error)")
                     DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
                 }
             }
             return
         }
 
-        print("DEBUG: PlateRecognizer cannot create CGImage or CIImage from UIImage")
+        print("PlateRecognizer: cannot create CGImage or CIImage from UIImage")
         DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
-    }
-
-    static func recognize(from cgImage: CGImage, completion: @escaping (PlateRecognitionResult) -> Void) {
-        let uiImage = UIImage(cgImage: cgImage)
-        recognize(from: uiImage, completion: completion)
-    }
-
-    static func recognize(from ciImage: CIImage, completion: @escaping (PlateRecognitionResult) -> Void) {
-        let context = CIContext(options: nil)
-        if let cg = context.createCGImage(ciImage, from: ciImage.extent) {
-            recognize(from: cg, completion: completion)
-        } else {
-            DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
-        }
-    }
-
-    static func recognize(from pixelBuffer: CVPixelBuffer, completion: @escaping (PlateRecognitionResult) -> Void) {
-        let request = VNRecognizeTextRequest { req, err in
-            if let err = err { print("DEBUG: VNRecognizeTextRequest error: \(err)") }
-            let observations = (req.results as? [VNRecognizedTextObservation]) ?? []
-
-            let candidateTuples: [(string: String, confidence: Float)] = observations.flatMap { obs in
-                obs.topCandidates(5).map { ($0.string, $0.confidence) }
-            }
-
-            var scored: [(plate: String, score: Double)] = []
-            for (raw, conf) in candidateTuples {
-                for variant in normalizeVariants(raw) {
-                    scored.append((variant, scorePlateCandidate(variant, baseConfidence: Double(conf))))
-                }
-            }
-
-            var bestByString: [String: Double] = [:]
-            for (p, s) in scored { bestByString[p] = max(bestByString[p] ?? -Double.infinity, s) }
-
-            let all = bestByString.sorted(by: { $0.value > $1.value }).map { $0.key }
-            let best = bestByString.filter { isPlateLike($0.key) }.max(by: { $0.value < $1.value })?.key
-            DispatchQueue.main.async { completion(.init(rawCandidates: all, bestMatch: best)) }
-        }
-
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        request.recognitionLanguages = ["en-US", "en-GB", "de-DE", "fr-FR", "it-IT", "nl-NL"]
-
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
-        DispatchQueue.global(qos: .userInitiated).async {
-            do { try handler.perform([request]) } catch {
-                print("DEBUG: VNImageRequestHandler.perform failed (pixelBuffer): \(error)")
-                DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
-            }
-        }
-    }
-
-    static func recognize(from sampleBuffer: CMSampleBuffer, completion: @escaping (PlateRecognitionResult) -> Void) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            DispatchQueue.main.async { completion(.init(rawCandidates: [], bestMatch: nil)) }
-            return
-        }
-        recognize(from: pixelBuffer, completion: completion)
     }
 
     // MARK: - Normalization & scoring
 
     /// Produces multiple variants because different mappings help for different OCR mistakes.
-    private static func normalizeVariants(_ text: String) -> [String] {
+    /// Each variant comes with the number of characters that were substituted.
+    static func normalizeVariants(_ text: String) -> [(String, Int)] {
         let upper = text.uppercased()
 
         // Keep only letters/digits and hyphen, drop spaces and punctuation.
@@ -182,16 +124,21 @@ enum PlateRecognizer {
         }
 
         let v0 = filtered
+        if v0.isEmpty { return [] }
+        // text that already reads as a plate is taken as is
+        if isPlateLike(v0) { return [(v0, 0)] }
         let v1 = map(filtered, table: letterToDigit)
         let v2 = map(filtered, table: digitToLetter)
 
+        func changes(_ v: String) -> Int { zip(v0, v).filter { $0 != $1 }.count }
+
         // De-duplicate while preserving order.
         var seen = Set<String>()
-        var out: [String] = []
+        var out: [(String, Int)] = []
         for v in [v0, v1, v2] {
             if !v.isEmpty && !seen.contains(v) {
                 seen.insert(v)
-                out.append(v)
+                out.append((v, changes(v)))
             }
         }
         return out
@@ -201,7 +148,7 @@ enum PlateRecognizer {
     /// - must contain digits
     /// - prefers letter+digit mixture
     /// - prefers patterns like "BE56789" instead of english words like "EDIT".
-    private static func scorePlateCandidate(_ plate: String, baseConfidence: Double) -> Double {
+    static func scorePlateCandidate(_ plate: String, baseConfidence: Double) -> Double {
         // Base confidence from Vision (0..1). Convert to 0..100 to make penalties easier.
         var score = baseConfidence * 100.0
 
@@ -236,24 +183,20 @@ enum PlateRecognizer {
         return broadRegex.firstMatch(in: text, options: [], range: range) != nil
     }
 
-    #if canImport(UIKit)
-    /// Captures a snapshot of the key window/screen and runs recognition on it.
-    static func recognizeFromScreen(completion: @escaping (PlateRecognitionResult) -> Void) {
-        guard let windowScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first,
-              let window = windowScene.keyWindow ?? windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first
-        else {
-            print("DEBUG: No key window available for screen snapshot")
-            completion(.init(rawCandidates: [], bestMatch: nil))
-            return
-        }
+}
 
-        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
-        let image = renderer.image { ctx in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+private extension CGImagePropertyOrientation {
+    init(_ o: UIImage.Orientation) {
+        switch o {
+        case .up: self = .up
+        case .upMirrored: self = .upMirrored
+        case .down: self = .down
+        case .downMirrored: self = .downMirrored
+        case .left: self = .left
+        case .leftMirrored: self = .leftMirrored
+        case .right: self = .right
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
         }
-        recognize(from: image, completion: completion)
     }
-    #endif
 }

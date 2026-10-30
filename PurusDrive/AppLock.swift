@@ -23,14 +23,12 @@ final class AppLock: ObservableObject {
     private var autoPrompt = true
     private var busy = false
     #if canImport(UIKit)
-    private var coverWindow: UIWindow?
-    private weak var scene: UIWindowScene?
+    private var coverWindows: [UIWindow] = []
     #endif
 
     #if canImport(UIKit)
     /// called when the window scene connects: the lock screen is up before the first frame
     func attach(_ scene: UIWindowScene) {
-        self.scene = scene
         if locked { showCover() }
     }
     #endif
@@ -82,21 +80,24 @@ final class AppLock: ObservableObject {
 
     private func showCover() {
         #if canImport(UIKit)
-        guard coverWindow == nil, let scene = scene ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
-        let w = UIWindow(windowScene: scene)
-        w.windowLevel = .alert + 1
-        let host = UIHostingController(rootView: LockedView().environmentObject(self))
-        host.view.backgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
-        w.rootViewController = host
-        w.isHidden = false
-        coverWindow = w
+        // one cover per window scene: on iPad every open window must be covered
+        guard coverWindows.isEmpty else { return }
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            let w = UIWindow(windowScene: scene)
+            w.windowLevel = .alert + 1
+            let host = UIHostingController(rootView: LockedView().environmentObject(self))
+            host.view.backgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+            w.rootViewController = host
+            w.isHidden = false
+            coverWindows.append(w)
+        }
         #endif
     }
 
     private func hideCover() {
         #if canImport(UIKit)
-        coverWindow?.isHidden = true
-        coverWindow = nil
+        coverWindows.forEach { $0.isHidden = true }
+        coverWindows = []
         #endif
     }
 }

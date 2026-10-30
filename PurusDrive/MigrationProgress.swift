@@ -8,10 +8,10 @@ final class MigrationProgress: ObservableObject {
         case idle
         case running(title: String, message: String?) // used for both migration and sync
         case success(message: String?)
-        case failure(error: String)
     }
 
     @Published var state: State = .idle
+    private var hideTask: Task<Void, Never>?
 
     var isVisible: Bool {
         switch state {
@@ -21,6 +21,8 @@ final class MigrationProgress: ObservableObject {
     }
 
     func start(title: String, message: String? = nil) {
+        // a pending auto-hide from the last run would hide this one
+        hideTask?.cancel()
         withAnimation { state = .running(title: title, message: message) }
     }
 
@@ -36,17 +38,10 @@ final class MigrationProgress: ObservableObject {
     func succeed(message: String? = nil) {
         withAnimation { state = .success(message: message) }
         // Auto-hide after a short delay
-        Task { @MainActor in
+        hideTask?.cancel()
+        hideTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
-            withAnimation { self.state = .idle }
-        }
-    }
-
-    func fail(error: String) {
-        withAnimation { state = .failure(error: error) }
-        // Auto-hide after a longer delay
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation { self.state = .idle }
         }
     }

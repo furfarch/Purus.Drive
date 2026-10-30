@@ -49,7 +49,7 @@ enum ExportService {
         func logDTO(_ l: DriveLog) -> ExportPayload.DriveLogDTO {
             .init(
                 id: l.id,
-                vehicleID: l.vehicle?.id ?? UUID(),
+                vehicleID: l.vehicle?.id,
                 dateISO8601: iso.string(from: l.date),
                 reason: l.reason,
                 kmStart: l.kmStart,
@@ -64,7 +64,8 @@ enum ExportService {
         func checklistDTO(_ c: Checklist) -> ExportPayload.ChecklistDTO {
             .init(
                 id: c.id,
-                vehicleID: nil,
+                vehicleID: c.vehicle?.id,
+                trailerID: c.trailer?.id,
                 vehicleType: c.vehicleType.rawValue,
                 title: c.title,
                 lastEditedISO8601: iso.string(from: c.lastEdited),
@@ -114,43 +115,38 @@ enum ExportService {
         lines.append("Generated: \(Date().formatted(date: .abbreviated, time: .standard))")
         lines.append("")
 
-        switch scope {
-        case .all, .vehicles, .logs, .checklists:
-            if scope == .all || scope == .vehicles || scope == .logs || scope == .checklists {
-                lines.append("VEHICLES")
-                for v in vehicles {
-                    lines.append("- [\(v.type.displayName)] \(v.brandModel) \(v.plate)")
-                    if let t = v.trailer {
-                        lines.append("    trailer: \(t.brandModel) \(t.plate)")
-                    }
-                }
-                lines.append("\nTRAILERS")
-                for t in trailers {
-                    lines.append("- \(t.brandModel) \(t.plate)")
-                }
-                lines.append("")
+        lines.append("VEHICLES")
+        for v in vehicles {
+            lines.append("- [\(v.type.displayName)] \(v.brandModel) \(v.plate)")
+            if let t = v.trailer {
+                lines.append("    trailer: \(t.brandModel) \(t.plate)")
             }
+        }
+        lines.append("\nTRAILERS")
+        for t in trailers {
+            lines.append("- \(t.brandModel) \(t.plate)")
+        }
+        lines.append("")
 
-            if scope == .all || scope == .logs {
-                lines.append("DRIVE LOGS")
-                for l in logs {
-                    let vehicleText: String
-                    if let v = l.vehicle {
-                        vehicleText = "\(v.brandModel) \(v.plate)"
-                    } else {
-                        vehicleText = "(no vehicle)"
-                    }
-                    lines.append("- \(l.date.formatted(date: .abbreviated, time: .shortened)) • \(vehicleText) • \(l.reason)")
+        if scope == .all || scope == .logs {
+            lines.append("DRIVE LOGS")
+            for l in logs {
+                let vehicleText: String
+                if let v = l.vehicle {
+                    vehicleText = "\(v.brandModel) \(v.plate)"
+                } else {
+                    vehicleText = "(no vehicle)"
                 }
-                lines.append("")
+                lines.append("- \(l.date.formatted(date: .abbreviated, time: .shortened)) • \(vehicleText) • \(l.reason)")
             }
+            lines.append("")
+        }
 
-            if scope == .all || scope == .checklists {
-                lines.append("CHECKLISTS")
-                for c in checklists {
-                    lines.append("- \(c.title) • \(c.vehicleType.displayName)")
-                    lines.append(ExportHelpers.checklistText(c))
-                }
+        if scope == .all || scope == .checklists {
+            lines.append("CHECKLISTS")
+            for c in checklists {
+                lines.append("- \(c.title) • \(c.vehicleType.displayName)")
+                lines.append(ExportHelpers.checklistText(c))
             }
         }
 

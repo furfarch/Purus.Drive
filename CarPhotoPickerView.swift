@@ -1,8 +1,9 @@
 import SwiftUI
 import PhotosUI
 
+/// Delivers the picked photo already downscaled (JPEG), or nil on cancel/failure.
 struct CarPhotoPickerView: View {
-    var completion: (UIImage?) -> Void
+    var completion: (Data?) -> Void
 
     @State private var showingAction = false
     @State private var showingCamera = false
@@ -27,7 +28,7 @@ struct CarPhotoPickerView: View {
                 do {
                     if let data = try await item.loadTransferable(type: Data.self),
                        let ui = UIImage(data: data) {
-                        await MainActor.run { completion(ui) }
+                        await MainActor.run { completion(ui.downscaledJPEG()) }
                     } else {
                         await MainActor.run { completion(nil) }
                     }
@@ -40,7 +41,7 @@ struct CarPhotoPickerView: View {
         .fullScreenCover(isPresented: $showingCamera) {
             CameraPickerUniversal { img in
                 showingCamera = false
-                completion(img)
+                completion(img?.downscaledJPEG())
             }
         }
     }

@@ -39,11 +39,14 @@ final class SyncConflictStore: ObservableObject {
     private init() {}
     
     func addConflict(_ conflict: SyncConflict) {
-        // Avoid duplicates
-        if !conflicts.contains(where: { $0.entityID == conflict.entityID && $0.entityType == conflict.entityType }) {
+        // the newest sync replaces an open entry for the same record, so an old remote copy can't be applied later
+        if let i = conflicts.firstIndex(where: { $0.entityID == conflict.entityID && $0.entityType == conflict.entityType }) {
+            resolutions[conflicts[i].id] = nil
+            conflicts[i] = conflict
+        } else {
             conflicts.append(conflict)
-            resolutions[conflict.id] = .pending
         }
+        resolutions[conflict.id] = .pending
     }
     
     func resolve(conflictID: UUID, resolution: ConflictResolution) {

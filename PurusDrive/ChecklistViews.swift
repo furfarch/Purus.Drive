@@ -1,138 +1,11 @@
 import SwiftUI
 import SwiftData
 
-struct ChecklistListView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Checklist.lastEdited, order: .reverse) private var checklists: [Checklist]
-
-    @State private var showingCreate = false
-    @State private var editChecklist: Checklist? = nil
-
-    var body: some View {
-        List {
-            if checklists.isEmpty {
-                ContentUnavailableView("No checklists", systemImage: "checklist", description: Text("Tap + to create a checklist from a template or blank."))
-            } else {
-                ForEach(checklists) { cl in
-                    NavigationLink(destination: ChecklistEditorView(checklist: cl)) {
-                        VStack(alignment: .leading) {
-                            Text(cl.title).font(.headline)
-                            Text(cl.vehicleType.displayName).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .onDelete(perform: delete)
-            }
-        }
-        .navigationTitle("Checklists")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showingCreate = true } label: { Image(systemName: "plus") }
-            }
-        }
-        .sheet(isPresented: $showingCreate) {
-            NavigationStack {
-                CreateChecklistView { new in
-                    modelContext.insert(new)
-                    do {
-                        try modelContext.save()
-                    } catch {
-                        print("ERROR: failed saving new checklist: \(error)")
-                    }
-                    showingCreate = false
-                    // open editor for created checklist
-                    editChecklist = new
-                }
-                .environment(\.modelContext, modelContext)
-            }
-        }
-        .sheet(item: $editChecklist) { cl in
-            NavigationStack { ChecklistEditorView(checklist: cl) }
-        }
-    }
-
-    private func delete(at offsets: IndexSet) {
-        for i in offsets {
-            let cl = checklists[i]
-            CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
-            modelContext.delete(cl)
-        }
-        try? modelContext.save()
-        Task { await CloudKitSyncService.shared.pushDeletions() }
-    }
-}
-
-struct CreateChecklistView: View {
-    @Environment(\.dismiss) private var dismiss
-    var onCreate: (Checklist) -> Void
-
-    /// When provided, the checklist is created for this vehicle (no extra selection required).
-    var preselectedVehicle: Vehicle? = nil
-
-    @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
-    @State private var selectedVehicle: Vehicle? = nil
-
-    var body: some View {
-        Form {
-            Section("Vehicle") {
-                if let preselectedVehicle {
-                    HStack {
-                        Text("Vehicle")
-                        Spacer()
-                        Text(preselectedVehicle.brandModel.isEmpty ? preselectedVehicle.type.displayName : preselectedVehicle.brandModel)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Picker("Vehicle", selection: $selectedVehicle) {
-                        Text("Select...").tag(Vehicle?.none)
-                        ForEach(vehicles) { v in
-                            Text(v.brandModel.isEmpty ? v.type.displayName : v.brandModel)
-                                .tag(Vehicle?.some(v))
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("New Checklist")
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    let effectiveVehicle = preselectedVehicle ?? selectedVehicle
-                    guard let selectedVehicle = effectiveVehicle else { return }
-                    let finalTitle = ChecklistTitle.make(for: selectedVehicle.type, date: .now)
-
-                    // Always prefill based on the vehicle's type.
-                    let items = ChecklistTemplates.items(for: selectedVehicle.type)
-                    let new = Checklist(vehicleType: selectedVehicle.type,
-                                        title: finalTitle,
-                                        items: items,
-                                        lastEdited: .now,
-                                        vehicle: selectedVehicle)
-                    onCreate(new)
-                    dismiss()
-                } label: {
-                    Text("Save").fontWeight(.semibold)
-                }
-                .accessibilityLabel("Save")
-                .disabled(preselectedVehicle == nil && selectedVehicle == nil)
-            }
-        }
-        .onAppear {
-            if let preselectedVehicle {
-                selectedVehicle = preselectedVehicle
-            }
-        }
-    }
-}
-
 // Checklist editor (moved here so all references compile)
 struct ChecklistEditorView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Bindable var checklist: Checklist
-
-    @Query(sort: \DriveLog.date, order: .reverse) private var allDriveLogs: [DriveLog]
 
     @State private var showingDeleteConfirm = false
 
@@ -144,48 +17,26 @@ struct ChecklistEditorView: View {
         return inPreferred + remainder
     }
 
-    private var subsectionOrderBySection: [String: [String]] {
-        ChecklistTemplates.subsectionOrderBySection(for: checklist.vehicleType)
+    private var layout: [String: (subsection: String?, index: Int)] {
+        ChecklistTemplates.layout(for: checklist.vehicleType)
     }
 
-    private func items(in section: String) -> [ChecklistItem] {
-        let sectionItems = (checklist.items ?? []).filter { $0.section == section }
-        guard let order = subsectionOrderBySection[section], !order.isEmpty else {
-            return sectionItems.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
-        return sectionItems.sorted { a, b in
-            let ia = order.firstIndex(of: a.title) ?? Int.max
-            let ib = order.firstIndex(of: b.title) ?? Int.max
+    /// items of a section in template order; items not in the template (older lists) follow A-Z
+    private func items(in section: String, layout: [String: (subsection: String?, index: Int)]) -> [ChecklistItem] {
+        (checklist.items ?? []).filter { $0.section == section }.sorted { a, b in
+            let ia = layout[ChecklistTemplates.layoutKey(section, a.title)]?.index ?? Int.max
+            let ib = layout[ChecklistTemplates.layoutKey(section, b.title)]?.index ?? Int.max
             if ia != ib { return ia < ib }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
     }
 
-    private func subsectionName(for item: ChecklistItem, in section: String) -> String? {
-        guard let order = subsectionOrderBySection[section], let idx = order.firstIndex(of: item.title) else { return nil }
-        let prior = order.prefix(idx)
-        // The template lists subsection labels as ALL CAPS; pick the most recent.
-        return prior.last(where: { $0.uppercased() == $0 })
-    }
-
-    private func binding(for item: ChecklistItem) -> Binding<ChecklistItem> {
-        Binding(get: {
-            (checklist.items ?? []).first(where: { $0.id == item.id }) ?? item
-        }, set: { updated in
-            guard var items = checklist.items else { return }
-            if let idx = items.firstIndex(where: { $0.id == updated.id }) {
-                items[idx] = updated
-                checklist.items = items
-            }
-        })
-    }
-
     /// items of a section split by subsection (template order)
-    private func grouped(_ items: [ChecklistItem], in section: String) -> [(subsection: String?, items: [ChecklistItem])] {
-        var result: [(String?, [ChecklistItem])] = []
+    private func grouped(_ items: [ChecklistItem], in section: String, layout: [String: (subsection: String?, index: Int)]) -> [(subsection: String?, items: [ChecklistItem])] {
+        var result: [(subsection: String?, items: [ChecklistItem])] = []
         for item in items {
-            let sub = subsectionName(for: item, in: section)
-            if let last = result.last, last.0 == sub { result[result.count - 1].1.append(item) }
+            let sub = layout[ChecklistTemplates.layoutKey(section, item.title)]?.subsection
+            if let last = result.last, last.subsection == sub { result[result.count - 1].items.append(item) }
             else { result.append((sub, [item])) }
         }
         return result
@@ -199,29 +50,42 @@ struct ChecklistEditorView: View {
         return s.isEmpty ? "No items" : s
     }
 
-    /// local save on every tap (as before); the Save button also syncs
+    /// local save on every tap (as before); Done also syncs
     private func saveLocal() {
         checklist.lastEdited = .now
         do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
     }
 
     var body: some View {
-        Group {
+        // after Delete the object is gone while the sheet is still dismissing; reading it would crash
+        if checklist.modelContext == nil { Color.clear } else { content }
+    }
+
+    private func saveAndClose() {
+        checklist.lastEdited = .now
+        do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
+        Task { await CloudKitSyncService.shared.pushAllToCloud() }
+        dismiss()
+    }
+
+    private var content: some View {
+        let layout = self.layout
+        return Group {
             if orderedSections.isEmpty {
                 ContentUnavailableView("No items", systemImage: "checklist", description: Text("This checklist has no items."))
             } else {
                 // FinAI style: one collapsible line per part with a summary, first part open
                 List {
                     ForEach(Array(orderedSections.enumerated()), id: \.offset) { index, section in
-                        let sectionItems = items(in: section)
+                        let sectionItems = items(in: section, layout: layout)
                         Section {
                             Fold(title: section, summary: summary(sectionItems), open: index == 0) {
-                                ForEach(Array(grouped(sectionItems, in: section).enumerated()), id: \.offset) { _, group in
+                                ForEach(Array(grouped(sectionItems, in: section, layout: layout).enumerated()), id: \.offset) { _, group in
                                     if let sub = group.subsection {
                                         Text(sub).font(.caption).foregroundStyle(.secondary)
                                     }
                                     ForEach(group.items) { item in
-                                        ChecklistCardItemRow(item: binding(for: item), onChange: saveLocal)
+                                        ChecklistCardItemRow(item: item, onChange: saveLocal)
                                     }
                                 }
                             }
@@ -233,8 +97,10 @@ struct ChecklistEditorView: View {
         .navigationTitle(checklist.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // a live checklist run saves every tap, so there is nothing to cancel: Done saves and syncs
             ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") { dismiss() }
+                Button("Done") { saveAndClose() }
+                    .fontWeight(.semibold)
             }
 
             ToolbarItem(placement: .topBarTrailing) {
@@ -245,30 +111,11 @@ struct ChecklistEditorView: View {
                 }
                 .accessibilityLabel("Delete")
             }
-
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    checklist.lastEdited = .now
-                    do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
-                    // Trigger CloudKit sync after save
-                    Task { await CloudKitSyncService.shared.pushAllToCloud() }
-                    dismiss()
-                } label: {
-                    Text("Save").fontWeight(.semibold)
-                }
-            }
         }
         .confirmationDialog("Delete this checklist?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                    // Clear any log references first.
-                    for log in allDriveLogs where log.checklist === checklist {
-                        log.checklist = nil
-                    }
-                    CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: checklist.id)
-                    modelContext.delete(checklist)
-                    do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
-                    Task { await CloudKitSyncService.shared.pushDeletions() }
-                    dismiss()
+                dismiss()
+                deleteChecklistLocally(checklist, in: modelContext)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -278,7 +125,7 @@ struct ChecklistEditorView: View {
 }
 
 private struct ChecklistCardItemRow: View {
-    @Binding var item: ChecklistItem
+    @Bindable var item: ChecklistItem
     let onChange: () -> Void
 
     var body: some View {
@@ -309,7 +156,7 @@ private struct ChecklistCardItemRow: View {
             }
 
             if let _ = item.note {
-                TextField("Notiz", text: Binding(
+                TextField("Note", text: Binding(
                     get: { item.note ?? "" },
                     set: { newValue in
                         item.note = newValue
@@ -341,4 +188,14 @@ private struct ChecklistCardItemRow: View {
     }
 }
 
-#Preview { NavigationStack { ChecklistListView() } }
+/// Deletes a checklist with its items, clears drive-log links and tombstones it for iCloud.
+@MainActor
+func deleteChecklistLocally(_ cl: Checklist, in context: ModelContext) {
+    for log in (try? context.fetch(FetchDescriptor<DriveLog>())) ?? [] where log.checklist === cl { log.checklist = nil }
+    CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: cl.id)
+    for i in cl.items ?? [] { context.delete(i) }
+    context.delete(cl)
+    do { try context.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
+    Task { await CloudKitSyncService.shared.pushDeletions() }
+    NotificationCenter.default.post(name: Notification.Name("RequestFullSyncNotification"), object: nil)
+}

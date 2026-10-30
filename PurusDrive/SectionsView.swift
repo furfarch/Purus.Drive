@@ -15,6 +15,9 @@ struct SectionsView: View {
 
     @State private var shareURL: URL? = nil
     @State private var showingShareSheet = false
+    @State private var exportError: String? = nil
+    /// Settings asks for Export/Import while it is closing; a second sheet can only open after that
+    @State private var afterSettings: (() -> Void)? = nil
 
     @State private var showingImportPicker = false
     @State private var importAlertTitle: String? = nil
@@ -68,17 +71,20 @@ struct SectionsView: View {
                             .accessibilityLabel("Add Vehicle")
                     }
                 }
-                .sheet(isPresented: $showingSettings) {
+                .sheet(isPresented: $showingSettings, onDismiss: {
+                    afterSettings?()
+                    afterSettings = nil
+                }) {
                     NavigationStack {
                         SettingsView(
-                            startExportFlow: { showingExport = true },
-                            startImportFlow: { showingImportPicker = true }
+                            startExportFlow: { afterSettings = { showingExport = true } },
+                            startImportFlow: { afterSettings = { showingImportPicker = true } }
                         )
                         .navigationTitle("Settings")
                     }
                 }
                 .sheet(isPresented: $showingAddVehicle) {
-                    NavigationStack { AddVehicleFlowView() }
+                    NavigationStack { VehicleFormView(vehicle: nil) }
                 }
                 .sheet(isPresented: $showingExport) {
                     NavigationStack {
@@ -117,7 +123,7 @@ struct SectionsView: View {
                                         shareURL = url
                                         showingShareSheet = true
                                     } catch {
-                                        print("ERROR: export failed: \(error)")
+                                        exportError = error.localizedDescription
                                     }
                                 } label: {
                                     Label("Generate Export", systemImage: "doc.badge.plus")
@@ -130,11 +136,23 @@ struct SectionsView: View {
                                 Button("Close") { showingExport = false }
                             }
                         }
-                    }
-                }
-                .sheet(isPresented: $showingShareSheet) {
-                    if let url = shareURL {
-                        ShareSheet(items: [url])
+                        // presented from the export sheet: a sibling sheet can't open while this one is up
+                        .sheet(isPresented: $showingShareSheet, onDismiss: {
+                            if let shareURL { try? FileManager.default.removeItem(at: shareURL) }
+                            shareURL = nil
+                        }) {
+                            if let url = shareURL {
+                                ShareSheet(items: [url])
+                            }
+                        }
+                        .alert("Export failed", isPresented: Binding(
+                            get: { exportError != nil },
+                            set: { if !$0 { exportError = nil } }
+                        )) {
+                            Button("OK", role: .cancel) {}
+                        } message: {
+                            Text(exportError ?? "")
+                        }
                     }
                 }
                 .fileImporter(
@@ -144,10 +162,14 @@ struct SectionsView: View {
                 ) { result in
                     do {
                         let url = try result.gettingOneURL()
+                        // files from Files/iCloud Drive are outside the sandbox (false = no scope needed, read may still work)
+                        let scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                         let data = try Data(contentsOf: url)
                         let summary = try ImportService.importJSON(data: data, into: modelContext)
                         importAlertTitle = "Import complete"
                         importAlertMessage = "Created: \(summary.totalCreated) • Updated: \(summary.totalUpdated)"
+                            + (summary.skipped > 0 ? " • Skipped: \(summary.skipped)" : "")
                     } catch {
                         importAlertTitle = "Import failed"
                         importAlertMessage = error.localizedDescription

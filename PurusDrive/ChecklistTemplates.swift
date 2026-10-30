@@ -1,7 +1,30 @@
 import Foundation
 
 enum ChecklistTemplates {
+    /// One template line; kept separate from ChecklistItem so the layout can be read without creating model objects.
+    private struct Entry {
+        let section: String
+        let subsection: String?
+        let title: String
+        var note: String? = nil
+    }
+
     static func items(for type: VehicleType) -> [ChecklistItem] {
+        entries(for: type).map { ChecklistItem(section: $0.section, title: $0.title, state: .notSelected, note: $0.note) }
+    }
+
+    /// "section|title" -> subsection header (nil when it repeats the section name) and template position.
+    static func layout(for type: VehicleType) -> [String: (subsection: String?, index: Int)] {
+        var map: [String: (subsection: String?, index: Int)] = [:]
+        for (i, e) in entries(for: type).enumerated() where map[layoutKey(e.section, e.title)] == nil {
+            map[layoutKey(e.section, e.title)] = (e.subsection == e.section ? nil : e.subsection, i)
+        }
+        return map
+    }
+
+    static func layoutKey(_ section: String, _ title: String) -> String { section + "|" + title }
+
+    private static func entries(for type: VehicleType) -> [Entry] {
         switch type {
         case .truck:
             return truck()
@@ -22,8 +45,8 @@ enum ChecklistTemplates {
         }
     }
 
-    private static func truck() -> [ChecklistItem] {
-        var items: [ChecklistItem] = []
+    private static func truck() -> [Entry] {
+        var items: [Entry] = []
         // FRONT UND MOTORRAUM
         items += section("FRONT UND MOTORRAUM", ["BELEUCHTUNG"])
         items += subsection("FRONT UND MOTORRAUM", "BELEUCHTUNG", [
@@ -118,8 +141,7 @@ enum ChecklistTemplates {
             "Ordnungsgemäße Funktion des Kontrollgerätes gewährleistet",
             "Plombierung in Ordnung",
             "Leuchtet die Funktionskontrollleuchte",
-            "Ausreichende Anzahl von Ersatzrollen bei Verwendung eines",
-            "digitalen Kontrollgerätes",
+            "Ausreichende Anzahl von Ersatzrollen bei Verwendung eines digitalen Kontrollgerätes",
             "Ausreichende Anzahl der richtigen Schaublätter dabei",
             "Tätigkeitsnachweise der vorausgegangen 28 Kalendertage",
         ])
@@ -129,7 +151,7 @@ enum ChecklistTemplates {
             "Verbandskasten",
             "Warndreieck",
             "Warnweste (griffbereit, DIN-Norm)",
-            "Fuerlöscher (falls vorgeschrieben/nötig)",
+            "Feuerlöscher (falls vorgeschrieben/nötig)",
         ])
 
         items += section("DOKUMENTE", [])
@@ -163,8 +185,8 @@ enum ChecklistTemplates {
         return items
     }
 
-    private static func carVan() -> [ChecklistItem] {
-        var items: [ChecklistItem] = []
+    private static func carVan() -> [Entry] {
+        var items: [Entry] = []
         // FRONT UND MOTORRAUM (AUSSENEQUIPMENT moved here to match Truck)
         items += section("FRONT UND MOTORRAUM", ["BELEUCHTUNG", "AUSSENEQUIPMENT"])
         items += subsection("FRONT UND MOTORRAUM", "BELEUCHTUNG", [
@@ -206,7 +228,7 @@ enum ChecklistTemplates {
             "Verbandskasten",
             "Warndreieck",
             "Warnweste (griffbereit, DIN-Norm)",
-            "Fuerlöscher (falls vorgeschrieben/nötig)",
+            "Feuerlöscher (falls vorgeschrieben/nötig)",
         ])
 
         items += section("DOKUMENTE", [])
@@ -221,8 +243,8 @@ enum ChecklistTemplates {
         return items
     }
 
-    private static func trailer() -> [ChecklistItem] {
-        var items: [ChecklistItem] = []
+    private static func trailer() -> [Entry] {
+        var items: [Entry] = []
         items += section("KONTROLLEN SEITE", ["BELEUCHTUNG"])
         items += subsection("KONTROLLEN SEITE", "BELEUCHTUNG", [
             "Seitliche Rückstrahler",
@@ -279,15 +301,15 @@ enum ChecklistTemplates {
     }
 
     // 1) OTHER: same as Car/Van + ANDERES section with ANDERS item + note field
-    private static func other() -> [ChecklistItem] {
+    private static func other() -> [Entry] {
         var items = carVan()
         items += section("ANDERES", [])
-        items.append(ChecklistItem(section: "ANDERES", title: "ANDERS", state: .notSelected, note: ""))
+        items.append(Entry(section: "ANDERES", subsection: nil, title: "ANDERS", note: ""))
         return items
     }
 
     // 2) CAMPER: same as Car/Van + CAMPING section + extra items in LADERAUM
-    private static func camper() -> [ChecklistItem] {
+    private static func camper() -> [Entry] {
         var items = carVan()
 
         items += section("CAMPING", ["ESSENTIALS"])
@@ -309,8 +331,8 @@ enum ChecklistTemplates {
     }
 
     // 3) BOAT
-    private static func boat() -> [ChecklistItem] {
-        var items: [ChecklistItem] = []
+    private static func boat() -> [Entry] {
+        var items: [Entry] = []
 
         items += section("BOOT", [])
         items += subsection("BOOT", "BOOT", [
@@ -328,7 +350,7 @@ enum ChecklistTemplates {
             "Verbandskasten",
             "Warndreieck",
             "Warnweste (griffbereit, DIN-Norm)",
-            "Fuerlöscher (falls vorgeschrieben/nötig)",
+            "Feuerlöscher (falls vorgeschrieben/nötig)",
             "Persönliche Schwimmwesten",
             "Signalgeräte / Notsignal",
         ])
@@ -350,8 +372,8 @@ enum ChecklistTemplates {
     }
 
     // 4) MOTORBIKE & SCOOTER: Car/Van without scheibenwaschanlage, Feuerlöscher, Ladungspapiere, Abmessungen und Gewicht
-    private static func motorbikeScooter(isScooter: Bool) -> [ChecklistItem] {
-        var items: [ChecklistItem] = []
+    private static func motorbikeScooter(isScooter: Bool) -> [Entry] {
+        var items: [Entry] = []
 
         items += section("FRONT UND MOTORRAUM", ["BELEUCHTUNG", "AUSSENEQUIPMENT"])
         items += subsection("FRONT UND MOTORRAUM", "BELEUCHTUNG", [
@@ -432,7 +454,7 @@ enum ChecklistTemplates {
             return [
                 "FRONT UND MOTORRAUM",
                 "KONTROLLEN SEITE",
-                "HINTEN",
+                "HINTEN/ LADERAUM",
                 "CAMPING",
                 "AUSRÜSTUNG",
                 "DOKUMENTE",
@@ -478,85 +500,14 @@ enum ChecklistTemplates {
         }
     }
 
-    static func subsectionOrderBySection(for type: VehicleType) -> [String: [String]] {
-        // Provides subgroup headers (ALL CAPS) so ChecklistEditorView can bucket items.
-        switch type {
-        case .truck:
-            return [
-                "FRONT UND MOTORRAUM": ["BELEUCHTUNG", "AUSSENEQUIPMENT", "MOTORRAUM"],
-                "KONTROLLEN SEITE": ["BELEUCHTUNG", "AUSSENEQUIPMENT", "REIFEN"],
-                "HINTEN/ LADERAUM": ["BELEUCHTUNG LADUNG/ SICHERUNG", "AUSSENEQUIPMENT", "LADERAUM"],
-                "LADUNG": ["LADUNG"],
-                "FAHRERKABINE": ["FAHRERKABINE"],
-                "KONTROLLGERÄT": ["KONTROLLGERÄT"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-                "ROUTEN- & TRANSPORTPLANUNG": ["ROUTEN- & TRANSPORTPLANUNG"],
-                "WINTERBETRIEB": ["WINTERBETRIEB"],
-            ]
-        case .car, .van:
-            return [
-                "FRONT UND MOTORRAUM": ["BELEUCHTUNG", "AUSSENEQUIPMENT"],
-                "KONTROLLEN SEITE": ["REIFEN"],
-                "HINTEN/ LADERAUM": ["BELEUCHTUNG"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-            ]
-        case .camper:
-            return [
-                "FRONT UND MOTORRAUM": ["BELEUCHTUNG", "AUSSENEQUIPMENT"],
-                "KONTROLLEN SEITE": ["REIFEN"],
-                "HINTEN": ["LADERAUM"],
-                "CAMPING": ["ESSENTIALS"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-            ]
-        case .trailer:
-            return [
-                "KONTROLLEN SEITE": ["BELEUCHTUNG"],
-                "AUSSENEQUIPMENT": ["AUSSENEQUIPMENT"],
-                "REIFEN": ["REIFEN"],
-                "HINTEN/ LADERAUM": ["BELEUCHTUNG LADUNG/ SICHERUNG"],
-                "AUSSENEQUIPMENT (HINTEN)": ["AUSSENEQUIPMENT (HINTEN)"],
-                "LADERAUM": ["LADERAUM"],
-                "LADUNG": ["LADUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-            ]
-        case .boat:
-            return [
-                "BOOT": ["BOOT"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-                "ROUTEN- & TRANSPORTPLANUNG": ["ROUTEN- & TRANSPORTPLANUNG"],
-            ]
-        case .motorbike, .scooter:
-            return [
-                "FRONT UND MOTORRAUM": ["BELEUCHTUNG", "AUSSENEQUIPMENT"],
-                "KONTROLLEN SEITE": ["REIFEN"],
-                "HINTEN/ LADERAUM": ["BELEUCHTUNG"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-            ]
-        case .other:
-            return [
-                "FRONT UND MOTORRAUM": ["BELEUCHTUNG", "AUSSENEQUIPMENT"],
-                "KONTROLLEN SEITE": ["REIFEN"],
-                "HINTEN/ LADERAUM": ["BELEUCHTUNG"],
-                "AUSRÜSTUNG": ["AUSRÜSTUNG"],
-                "DOKUMENTE": ["DOKUMENTE"],
-                "ANDERES": ["Verschiedenes (Notiz)"],
-            ]
-        }
-    }
-
     // Helpers to create items for sections and subsections
-    private static func section(_ name: String, _ subsections: [String]) -> [ChecklistItem] {
+    private static func section(_ name: String, _ subsections: [String]) -> [Entry] {
         // Do not create placeholder items for headers/subheaders.
         // Section/subsection presentation is handled in the UI.
         return []
     }
 
-    private static func subsection(_ section: String, _ name: String, _ titles: [String]) -> [ChecklistItem] {
-        titles.map { ChecklistItem(section: section, title: $0, state: .notSelected) }
+    private static func subsection(_ section: String, _ name: String, _ titles: [String]) -> [Entry] {
+        titles.map { Entry(section: section, subsection: name, title: $0) }
     }
 }

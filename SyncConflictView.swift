@@ -94,7 +94,7 @@ struct SyncConflictView: View {
     private var canApply: Bool {
         // All conflicts must have a resolution selected (not pending)
         conflictStore.conflicts.allSatisfy { conflict in
-            selectedResolutions[conflict.id] != .pending
+            selectedResolutions[conflict.id].map { $0 != .pending } ?? false
         }
     }
     

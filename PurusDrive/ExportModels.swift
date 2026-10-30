@@ -41,7 +41,7 @@ struct ExportPayload: Codable {
 
     struct DriveLogDTO: Codable {
         var id: UUID
-        var vehicleID: UUID
+        var vehicleID: UUID?
         var dateISO8601: String
         var reason: String
         var kmStart: Int
@@ -63,6 +63,8 @@ struct ExportPayload: Codable {
 
         var id: UUID
         var vehicleID: UUID?
+        /// optional so files exported before trailer owners were written still import
+        var trailerID: UUID?
         var vehicleType: String
         var title: String
         var lastEditedISO8601: String
