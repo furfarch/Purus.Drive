@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct SectionsView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @State private var showingAbout = false
     @State private var showingAddVehicle = false
 
     @State private var showingSettings = false
@@ -29,17 +28,34 @@ struct SectionsView: View {
     @Query(sort: \DriveLog.date, order: .reverse) private var logs: [DriveLog]
     @Query(sort: \Checklist.lastEdited, order: .reverse) private var checklists: [Checklist]
 
-    var body: some View {
-        NavigationStack {
-            VehiclesListView()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    // About should be the upper-left item.
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { showingAbout = true } label: { Image(systemName: "info.circle") }
-                            .accessibilityLabel("About")
-                    }
+    // Wide screen (iPhone Duo unfolded, iPad): list left, vehicle right. The Duo reports compact width, so the real width decides too.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var screenWidth: CGFloat = 0
+    @State private var selection: VehicleSelection? = nil
+    private var isWide: Bool { horizontalSizeClass == .regular || screenWidth >= 560 }
 
+    var body: some View {
+        Group {
+            if isWide {
+                HStack(spacing: 0) {
+                    listStack
+                        .frame(width: min(320, max(240, screenWidth * 0.36)))
+                    Divider()
+                    VehicleDetailColumn(selection: $selection)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                listStack
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+    }
+
+    private var listStack: some View {
+        NavigationStack {
+            VehiclesListView(selection: isWide ? $selection : nil)
+                .navigationTitle("Vehicles")
+                .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { showingSettings = true } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("Settings")
@@ -51,9 +67,6 @@ struct SectionsView: View {
                         Button { showingAddVehicle = true } label: { Image(systemName: "plus") }
                             .accessibilityLabel("Add Vehicle")
                     }
-                }
-                .sheet(isPresented: $showingAbout) {
-                    NavigationStack { AboutView().navigationTitle("About") }
                 }
                 .sheet(isPresented: $showingSettings) {
                     NavigationStack {

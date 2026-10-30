@@ -115,6 +115,7 @@ struct SettingsView: View {
     @AppStorage("storageLocation") private var storageLocationRaw: String = StorageLocation.local.rawValue
 
     @StateObject private var cloudStatus = CloudStatusViewModel()
+    @AppStorage(AppLock.enabledKey) private var faceIDLock = false
 
     @State private var showRestartHint = false
     @State private var showICloudUnavailableAlert = false
@@ -257,6 +258,24 @@ struct SettingsView: View {
                 }
             }
 #endif
+
+            Section {
+                Toggle(isOn: $faceIDLock) {
+                    Label("Face ID lock", systemImage: "faceid")
+                }
+            } header: {
+                Text("Security")
+            } footer: {
+                Text("Asks for Face ID or your passcode every time the app opens.")
+            }
+
+            Section {
+                NavigationLink {
+                    AboutView().navigationTitle("About")
+                } label: {
+                    Label("About", systemImage: "info.circle")
+                }
+            }
 
             Section {
                 Button("Close") { dismiss() }

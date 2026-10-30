@@ -9,27 +9,10 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-    @State private var showingAbout = false
-
+    // The Xcode template's unused @Query for Item was removed: Item is not in the app's schema,
+    // and that query crashed the app on the first save that touched checklist items.
     var body: some View {
         SectionsView()
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
-        }
     }
 }
 

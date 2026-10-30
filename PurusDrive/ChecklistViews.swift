@@ -112,7 +112,7 @@ struct CreateChecklistView: View {
                     onCreate(new)
                     dismiss()
                 } label: {
-                    Image(systemName: "internaldrive.fill")
+                    Text("Save").fontWeight(.semibold)
                 }
                 .accessibilityLabel("Save")
                 .disabled(preselectedVehicle == nil && selectedVehicle == nil)
@@ -134,7 +134,7 @@ struct ChecklistEditorView: View {
 
     @Query(sort: \DriveLog.date, order: .reverse) private var allDriveLogs: [DriveLog]
 
-    @State private var selectedSectionIndex: Int = 0
+    @State private var showingDeleteConfirm = false
 
     private var orderedSections: [String] {
         let present = Set((checklist.items ?? []).map { $0.section })
@@ -180,28 +180,54 @@ struct ChecklistEditorView: View {
         })
     }
 
+    /// items of a section split by subsection (template order)
+    private func grouped(_ items: [ChecklistItem], in section: String) -> [(subsection: String?, items: [ChecklistItem])] {
+        var result: [(String?, [ChecklistItem])] = []
+        for item in items {
+            let sub = subsectionName(for: item, in: section)
+            if let last = result.last, last.0 == sub { result[result.count - 1].1.append(item) }
+            else { result.append((sub, [item])) }
+        }
+        return result
+    }
+
+    /// "5 done · 1 not OK · 2 open"
+    private func summary(_ items: [ChecklistItem]) -> String {
+        func n(_ st: ChecklistItemState) -> Int { items.filter { $0.state == st }.count }
+        let parts = [(n(.selected), "done"), (n(.notOk), "not OK"), (n(.notApplicable), "n/a"), (n(.notSelected), "open")]
+        let s = parts.filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: " · ")
+        return s.isEmpty ? "No items" : s
+    }
+
+    /// local save on every tap (as before); the Save button also syncs
+    private func saveLocal() {
+        checklist.lastEdited = .now
+        do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if orderedSections.isEmpty {
                 ContentUnavailableView("No items", systemImage: "checklist", description: Text("This checklist has no items."))
             } else {
-                TabView(selection: $selectedSectionIndex) {
+                // FinAI style: one collapsible line per part with a summary, first part open
+                List {
                     ForEach(Array(orderedSections.enumerated()), id: \.offset) { index, section in
-                        ChecklistSectionCard(
-                            title: section,
-                            items: items(in: section),
-                            subsectionNameForItem: { item in subsectionName(for: item, in: section) },
-                            bindingFor: binding(for:),
-                            onChange: {
-                                checklist.lastEdited = .now
-                                do { try modelContext.save() } catch { print("ERROR: failed saving checklist: \(error)") }
+                        let sectionItems = items(in: section)
+                        Section {
+                            Fold(title: section, summary: summary(sectionItems), open: index == 0) {
+                                ForEach(Array(grouped(sectionItems, in: section).enumerated()), id: \.offset) { _, group in
+                                    if let sub = group.subsection {
+                                        Text(sub).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    ForEach(group.items) { item in
+                                        ChecklistCardItemRow(item: binding(for: item), onChange: saveLocal)
+                                    }
+                                }
                             }
-                        )
-                        .padding(.horizontal)
-                        .tag(index)
+                        }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
             }
         }
         .navigationTitle(checklist.title)
@@ -213,15 +239,7 @@ struct ChecklistEditorView: View {
 
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .destructive) {
-                    // Clear any log references first.
-                    for log in allDriveLogs where log.checklist === checklist {
-                        log.checklist = nil
-                    }
-                    CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: checklist.id)
-                    modelContext.delete(checklist)
-                    do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
-                    Task { await CloudKitSyncService.shared.pushDeletions() }
-                    dismiss()
+                    showingDeleteConfirm = true
                 } label: {
                     Image(systemName: "trash")
                 }
@@ -236,82 +254,26 @@ struct ChecklistEditorView: View {
                     Task { await CloudKitSyncService.shared.pushAllToCloud() }
                     dismiss()
                 } label: {
-                    Image(systemName: "internaldrive.fill")
+                    Text("Save").fontWeight(.semibold)
                 }
-                .accessibilityLabel("Save")
             }
         }
-    }
-}
-
-private struct ChecklistSectionCard: View {
-    let title: String
-    let items: [ChecklistItem]
-    let subsectionNameForItem: (ChecklistItem) -> String?
-    let bindingFor: (ChecklistItem) -> Binding<ChecklistItem>
-    let onChange: () -> Void
-
-    private var grouped: [(subsection: String?, items: [ChecklistItem])] {
-        var result: [(String?, [ChecklistItem])] = []
-        var current: String? = nil
-        var bucket: [ChecklistItem] = []
-
-        for item in items {
-            let sub = subsectionNameForItem(item)
-            if sub != current {
-                if !bucket.isEmpty {
-                    result.append((current, bucket))
-                    bucket = []
-                }
-                current = sub
-            }
-            bucket.append(item)
-        }
-        if !bucket.isEmpty { result.append((current, bucket)) }
-        return result
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if items.isEmpty {
-                Text("No items in this section")
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(grouped.enumerated()), id: \.offset) { _, group in
-                            if let subtitle = group.subsection {
-                                Text(subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 4)
-                            }
-
-                            ForEach(group.items) { item in
-                                ChecklistCardItemRow(item: bindingFor(item), onChange: onChange)
-                                    .padding(.vertical, 2)
-                            }
-                        }
+        .confirmationDialog("Delete this checklist?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                    // Clear any log references first.
+                    for log in allDriveLogs where log.checklist === checklist {
+                        log.checklist = nil
                     }
-                    .padding(.bottom, 20)
-                }
+                    CloudKitSyncService.shared.markDeleted(entityType: "Checklist", id: checklist.id)
+                    modelContext.delete(checklist)
+                    do { try modelContext.save() } catch { print("ERROR: failed deleting checklist: \(error)") }
+                    Task { await CloudKitSyncService.shared.pushDeletions() }
+                    dismiss()
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(.separator).opacity(0.35), lineWidth: 1)
-        )
     }
 }
 
@@ -328,6 +290,7 @@ private struct ChecklistCardItemRow: View {
                 } label: {
                     Image(systemName: symbolName(for: item.state))
                         .font(.title3)
+                        .foregroundStyle(color(for: item.state))
                 }
                 .buttonStyle(.plain)
 
@@ -335,10 +298,9 @@ private struct ChecklistCardItemRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button {
-                    // keep existing note toggle behavior
+                    // show an empty note field; hide it again only while it is empty (never erase a written note)
                     if item.note == nil { item.note = "" }
-                    else if item.note == "" { item.note = "Add details…" }
-                    else { item.note = nil }
+                    else if item.note == "" { item.note = nil }
                     onChange()
                 } label: {
                     Image(systemName: "ellipsis")
@@ -358,6 +320,14 @@ private struct ChecklistCardItemRow: View {
                 .textFieldStyle(.plain)
                 .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func color(for state: ChecklistItemState) -> Color {
+        switch state {
+        case .selected: return .green
+        case .notOk: return .red
+        case .notSelected, .notApplicable: return .secondary
         }
     }
 

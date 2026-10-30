@@ -71,7 +71,7 @@ struct CreateTrailerView: View {
                     Task { await CloudKitSyncService.shared.pushAllToCloud() }
                     dismiss()
                 }) {
-                    Image(systemName: "internaldrive.fill")
+                    Text("Save").fontWeight(.semibold)
                 }
                 .accessibilityLabel("Save")
             }

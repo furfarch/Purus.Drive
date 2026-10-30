@@ -92,6 +92,7 @@ struct DriveLogEditorView: View {
     var lockVehicle: Bool = false
 
     @State private var showChecklistRunner = false
+    @State private var showingDeleteConfirm = false
     @State private var createdChecklistToEdit: Checklist? = nil
 
     private var filteredChecklists: [Checklist] {
@@ -173,7 +174,7 @@ struct DriveLogEditorView: View {
             if !isNew {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
-                        deleteLog()
+                        showingDeleteConfirm = true
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -181,17 +182,19 @@ struct DriveLogEditorView: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    saveAndClose()
-                } label: {
-                    Image(systemName: "internaldrive.fill")
-                }
-                .accessibilityLabel("Save")
+                Button("Save") { saveAndClose() }
+                    .fontWeight(.semibold)
             }
+        }
+        .confirmationDialog("Delete this drive log?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { deleteLog() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
         }
         .sheet(isPresented: $showChecklistRunner) {
             if let cl = log.checklist {
-                ChecklistRunnerView(checklist: cl)
+                NavigationStack { ChecklistEditorView(checklist: cl) }
             }
         }
         .sheet(item: $createdChecklistToEdit) { cl in
@@ -232,99 +235,9 @@ struct DriveLogEditorView: View {
     }
 }
 
-struct ChecklistRunnerView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State var checklist: Checklist
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(sectionedItems.keys.sorted(), id: \.self) { section in
-                    Section(section) {
-                        ForEach(items(in: section)) { item in
-                            ChecklistRunnerItemRow(item: binding(for: item))
-                        }
-                    }
-                }
-            }
-            .navigationTitle(checklist.title)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private var sectionedItems: [String: [ChecklistItem]] {
-        Dictionary(grouping: checklist.items ?? [], by: { $0.section })
-    }
-
-    private func items(in section: String) -> [ChecklistItem] {
-        sectionedItems[section] ?? []
-    }
-
-    private func binding(for item: ChecklistItem) -> Binding<ChecklistItem> {
-        Binding(get: {
-            (checklist.items ?? []).first(where: { $0.id == item.id }) ?? item
-        }, set: { updated in
-            guard var items = checklist.items else { return }
-            if let idx = items.firstIndex(where: { $0.id == item.id }) {
-                items[idx] = updated
-                checklist.items = items
-            }
-        })
-    }
-}
-
-private struct ChecklistRunnerItemRow: View {
-    @Binding var item: ChecklistItem
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button {
-                item.state.cycle()
-            } label: {
-                Image(systemName: symbolName(for: item.state))
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-
-                if let note = item.note, !note.isEmpty {
-                    Text(note)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            if let note = item.note, !note.isEmpty {
-                Image(systemName: "note.text")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func symbolName(for state: ChecklistItemState) -> String {
-        switch state {
-        case .notSelected: return "circle"
-        case .selected: return "checkmark.circle.fill"
-        case .notApplicable: return "minus.circle"
-        case .notOk: return "xmark.octagon.fill"
-        }
-    }
-}
-
 private enum DriveLogTitleFormatter {
     static func title(for date: Date) -> String {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = .current
-        df.dateFormat = "yyyy-MM-dd HH:mm"
-        return "Drive Log \(df.string(from: date))"
+        date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 

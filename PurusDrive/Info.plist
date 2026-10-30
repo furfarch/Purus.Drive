@@ -4,8 +4,12 @@
 <dict>
 	<key>CFBundleDisplayName</key>
 	<string>purus Drive</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs access to the camera to take vehicle photos and scan license plates.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Purus Drive uses Face ID to unlock the app when the Face ID lock is on.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app may save photos of vehicles to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

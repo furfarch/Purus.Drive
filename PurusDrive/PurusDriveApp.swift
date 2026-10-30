@@ -143,17 +143,26 @@ struct PurusDriveApp: App {
         }
     }
 
+    @ObservedObject private var lock = AppLock.shared
+
     var body: some Scene {
         WindowGroup {
             if let container {
                 ContentView()
                     .modelContainer(container)
                     .modifier(SyncOverlayModifier(enabled: ENABLE_SYNC_OVERLAY, migrationProgress: migrationProgress))
+                    // optional Face ID lock: covers the first frame here, later locks use the lock window
+                    .overlay { if lock.locked { LockedView().environmentObject(lock) } }
+                    .onAppear {
+                        if let ws = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first { lock.attach(ws) }
+                    }
                     .task {
                         await handleStorageModeTransitionIfNeeded()
                         await syncIfCloudEnabled()
                     }
                     .onChange(of: scenePhase) { oldPhase, newPhase in
+                        if newPhase == .background { lock.lock() }
+                        if newPhase == .active { lock.appBecameActive() }
                         if newPhase == .active {
                             Task {
                                 await handleStorageModeTransitionIfNeeded()
