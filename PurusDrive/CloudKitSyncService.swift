@@ -89,6 +89,8 @@ final class CloudKitSyncService {
             if let c = try checklist(id, context) { deleteChecklist(c, context: context) }
         case "ChecklistItem":
             if let i = try checklistItem(id, context) { context.delete(i) }
+        case "WorkBlock":
+            if let b = try workBlock(id, context) { context.delete(b) }
         default: break
         }
     }
@@ -117,6 +119,7 @@ final class CloudKitSyncService {
         case "DriveLog": return try driveLog(id, context)?.lastEdited
         case "Checklist": return try checklist(id, context)?.lastEdited
         case "ChecklistItem": return try checklistItem(id, context)?.checklist?.lastEdited
+        case "WorkBlock": return try workBlock(id, context)?.lastEdited
         default: return nil
         }
     }
@@ -227,6 +230,7 @@ final class CloudKitSyncService {
         do { try await fetchChecklists(context: context) } catch { fetchFailed = true; recordError("Fetch checklists", error) }
         do { try await fetchChecklistItems(context: context) } catch { fetchFailed = true; recordError("Fetch checklist items", error) }
         do { try await fetchDriveLogs(context: context) } catch { fetchFailed = true; recordError("Fetch drive logs", error) }
+        do { try await fetchWorkBlocks(context: context) } catch { fetchFailed = true; recordError("Fetch work time", error) }
         do { try context.save() } catch { fetchFailed = true; recordError("Save after fetch", error) }
 
         // 3) Push local records — never after a failed download: it would overwrite edits we haven't seen
@@ -236,6 +240,7 @@ final class CloudKitSyncService {
             do { try await pushChecklists(context: context) } catch { recordError("Push checklists", error) }
             do { try await pushChecklistItems(context: context) } catch { recordError("Push checklist items", error) }
             do { try await pushDriveLogs(context: context) } catch { recordError("Push drive logs", error) }
+            do { try await pushWorkBlocks(context: context) } catch { recordError("Push work time", error) }
         }
 
         // 4) Deletions created during this sync
@@ -258,6 +263,7 @@ final class CloudKitSyncService {
         do { try await fetchChecklists(context: context) } catch { print("CloudKitSyncService: Fetch checklists error - \(error)") }
         do { try await fetchChecklistItems(context: context) } catch { print("CloudKitSyncService: Fetch checklist items error - \(error)") }
         do { try await fetchDriveLogs(context: context) } catch { print("CloudKitSyncService: Fetch drive logs error - \(error)") }
+        do { try await fetchWorkBlocks(context: context) } catch { print("CloudKitSyncService: Fetch work time error - \(error)") }
         do { try context.save() } catch { print("CloudKitSyncService: Failed to save after fetch - \(error)") }
     }
 
@@ -439,6 +445,21 @@ final class CloudKitSyncService {
         remoteAppliedChecklistIDs.insert(checklist.id)
     }
 
+    private func applyRemoteWorkBlock(record: CKRecord, to b: WorkBlock) {
+        if let a = (record["CD_activity"] as? String).flatMap({ WorkActivity(rawValue: $0) }) { b.activity = a }
+        if let start = record["CD_start"] as? Date { b.start = start }
+        b.end = record["CD_end"] as? Date
+        b.vehiclePlate = record["CD_vehiclePlate"] as? String ?? ""
+        b.vehicleName = record["CD_vehicleName"] as? String ?? ""
+        b.kmStart = record["CD_kmStart"] as? Int
+        b.kmEnd = record["CD_kmEnd"] as? Int
+        b.placeStart = record["CD_placeStart"] as? String ?? ""
+        b.placeEnd = record["CD_placeEnd"] as? String ?? ""
+        b.exception = (record["CD_exception"] as? Int ?? 0) != 0
+        b.note = record["CD_note"] as? String ?? ""
+        if let lastEdited = record["CD_lastEdited"] as? Date { b.lastEdited = lastEdited }
+    }
+
     private func applyRemoteChecklistItem(record: CKRecord, to item: ChecklistItem, context: ModelContext) throws {
         if let state = (record["CD_state"] as? String).flatMap({ ChecklistItemState(rawValue: $0) }) { item.state = state }
         item.section = record["CD_section"] as? String ?? ""
@@ -472,6 +493,11 @@ final class CloudKitSyncService {
     private func checklistItem(_ id: UUID?, _ context: ModelContext) throws -> ChecklistItem? {
         guard let id else { return nil }
         return try context.fetch(FetchDescriptor<ChecklistItem>(predicate: #Predicate { $0.id == id })).first
+    }
+
+    private func workBlock(_ id: UUID?, _ context: ModelContext) throws -> WorkBlock? {
+        guard let id else { return nil }
+        return try context.fetch(FetchDescriptor<WorkBlock>(predicate: #Predicate { $0.id == id })).first
     }
 
     // MARK: - Deletions
@@ -513,6 +539,7 @@ final class CloudKitSyncService {
         case "DriveLog": return "CD_DriveLog"
         case "Checklist": return "CD_Checklist"
         case "ChecklistItem": return "CD_ChecklistItem"
+        case "WorkBlock": return "CD_WorkBlock"
         default: return entityType
         }
     }
@@ -731,6 +758,19 @@ final class CloudKitSyncService {
                              apply: { try applyRemoteChecklist(record: $0, to: $1, context: context) })
     }
 
+    /// Newer wins, no conflict list. A record type the iCloud schema does not have yet counts as empty.
+    private func fetchWorkBlocks(context: ModelContext) async throws {
+        do {
+            try await fetchMerge(recordType: "CD_WorkBlock", entityType: "WorkBlock", label: "WorkTime", allowConflict: false, context: context,
+                                 find: { try workBlock($0, context) },
+                                 create: { id in let b = WorkBlock(); b.id = id; context.insert(b); return b },
+                                 lastEdited: { $0.lastEdited },
+                                 apply: { applyRemoteWorkBlock(record: $0, to: $1) })
+        } catch let error as CKError where error.code == .unknownItem {
+            print("CloudKit: no work time records yet")
+        }
+    }
+
     /// Items have no lastEdited: an existing item takes the iCloud fields only when its checklist came newer from iCloud.
     private func fetchChecklistItems(context: ModelContext) async throws {
         let records = try await fetchRecords(query: CKQuery(recordType: "CD_ChecklistItem", predicate: NSPredicate(value: true)))
@@ -824,6 +864,30 @@ final class CloudKitSyncService {
         }
         try await saveRecordsBatch(records)
         count(.syncPushedCount, "DriveLogs", records.count)
+    }
+
+    private func pushWorkBlocks(context: ModelContext) async throws {
+        let skip = skippedIDs(in: context)
+        let blocks = try context.fetch(FetchDescriptor<WorkBlock>()).filter { !skip.contains($0.id) }
+        let records: [CKRecord] = blocks.map { b in
+            let record = CKRecord(recordType: "CD_WorkBlock", recordID: recordID(for: "CD_WorkBlock", uuid: b.id))
+            record["CD_id"] = b.id.uuidString
+            record["CD_activity"] = b.activity.rawValue
+            record["CD_start"] = b.start
+            record["CD_end"] = b.end
+            record["CD_vehiclePlate"] = b.vehiclePlate
+            record["CD_vehicleName"] = b.vehicleName
+            record["CD_kmStart"] = b.kmStart
+            record["CD_kmEnd"] = b.kmEnd
+            record["CD_placeStart"] = b.placeStart
+            record["CD_placeEnd"] = b.placeEnd
+            record["CD_exception"] = b.exception ? 1 : 0
+            record["CD_note"] = b.note
+            record["CD_lastEdited"] = b.lastEdited
+            return record
+        }
+        try await saveRecordsBatch(records)
+        count(.syncPushedCount, "WorkTime", records.count)
     }
 
     private func pushChecklists(context: ModelContext) async throws {

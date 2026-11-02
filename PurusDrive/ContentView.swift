@@ -18,7 +18,7 @@ struct ContentView: View {
 
 #Preview {
     // same schema as the app; .none because the CloudKit entitlement would otherwise turn on auto-sync and reject the schema
-    let schema = Schema([Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self, DeletedRecord.self])
+    let schema = Schema([Vehicle.self, Trailer.self, DriveLog.self, Checklist.self, ChecklistItem.self, WorkBlock.self, DeletedRecord.self])
     let container = try! ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
     return ContentView().modelContainer(container)
 }

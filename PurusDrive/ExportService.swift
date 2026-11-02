@@ -3,23 +3,24 @@ import SwiftData
 
 enum ExportService {
 
-    static func exportData(scope: ExportScope, format: ExportFormat, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist]) throws -> (fileName: String, data: Data) {
+    static func exportData(scope: ExportScope, format: ExportFormat, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist], workBlocks: [WorkBlock] = []) throws -> (fileName: String, data: Data) {
+        let workBlocks = workBlocks.sorted { $0.start < $1.start }
         switch format {
         case .json:
-            let data = try jsonExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists)
+            let data = try jsonExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists, workBlocks: workBlocks)
             return (fileName(scope: scope, ext: format.fileExtension), data)
         case .txt:
-            let text = textExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists)
+            let text = textExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists, workBlocks: workBlocks)
             return (fileName(scope: scope, ext: format.fileExtension), Data(text.utf8))
         case .html:
-            let html = htmlExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists)
+            let html = htmlExport(scope: scope, vehicles: vehicles, trailers: trailers, logs: logs, checklists: checklists, workBlocks: workBlocks)
             return (fileName(scope: scope, ext: format.fileExtension), Data(html.utf8))
         }
     }
 
     // MARK: - JSON
 
-    private static func jsonExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist]) throws -> Data {
+    private static func jsonExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist], workBlocks: [WorkBlock]) throws -> Data {
         let iso = ISO8601DateFormatter()
 
         func vehicleDTO(_ v: Vehicle) -> ExportPayload.VehicleDTO {
@@ -73,6 +74,13 @@ enum ExportService {
             )
         }
 
+        func blockDTO(_ b: WorkBlock) -> ExportPayload.WorkBlockDTO {
+            .init(id: b.id, activity: b.activity.rawValue, startISO8601: iso.string(from: b.start), endISO8601: b.end.map { iso.string(from: $0) },
+                  vehiclePlate: b.vehiclePlate, vehicleName: b.vehicleName, kmStart: b.kmStart, kmEnd: b.kmEnd,
+                  placeStart: b.placeStart, placeEnd: b.placeEnd, exception: b.exception, note: b.note,
+                  lastEditedISO8601: iso.string(from: b.lastEdited))
+        }
+
         var payload = ExportPayload(
             generatedAtISO8601: iso.string(from: .now),
             scope: scope.rawValue,
@@ -88,6 +96,9 @@ enum ExportService {
             payload.trailers = trailers.map(trailerDTO)
             payload.driveLogs = logs.map(logDTO)
             payload.checklists = checklists.map(checklistDTO)
+            payload.workBlocks = workBlocks.map(blockDTO)
+        case .workTime:
+            payload.workBlocks = workBlocks.map(blockDTO)
         case .vehicles:
             payload.vehicles = vehicles.map(vehicleDTO)
             payload.trailers = trailers.map(trailerDTO)
@@ -109,7 +120,18 @@ enum ExportService {
 
     // MARK: - TXT
 
-    private static func textExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist]) -> String {
+    private static func blockLine(_ b: WorkBlock) -> String {
+        var parts = ["\(b.start.formatted(date: .abbreviated, time: .shortened))–\(b.end?.formatted(date: .omitted, time: .shortened) ?? "running")", b.activity.title]
+        if !b.vehiclePlate.isEmpty { parts.append(b.vehiclePlate) }
+        if let k = b.kmStart { parts.append("km \(k)–\(b.kmEnd.map(String.init) ?? "")") }
+        let place = [b.placeStart, b.placeEnd].filter { !$0.isEmpty }.joined(separator: " → ")
+        if !place.isEmpty { parts.append(place) }
+        if b.exception { parts.append("Art. 12 exception") }
+        if !b.note.isEmpty { parts.append(b.note) }
+        return parts.joined(separator: " • ")
+    }
+
+    private static func textExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist], workBlocks: [WorkBlock]) -> String {
         var lines: [String] = []
         lines.append("Export: \(scope.title)")
         lines.append("Generated: \(Date().formatted(date: .abbreviated, time: .standard))")
@@ -150,12 +172,18 @@ enum ExportService {
             }
         }
 
+        if scope == .all || scope == .workTime {
+            lines.append("")
+            lines.append("WORK TIME")
+            for b in workBlocks { lines.append("- " + blockLine(b)) }
+        }
+
         return lines.joined(separator: "\n")
     }
 
     // MARK: - HTML
 
-    private static func htmlExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist]) -> String {
+    private static func htmlExport(scope: ExportScope, vehicles: [Vehicle], trailers: [Trailer], logs: [DriveLog], checklists: [Checklist], workBlocks: [WorkBlock]) -> String {
         var body = "<h1>Export: \(escape(scope.title))</h1>"
         body += "<p><strong>Generated:</strong> \(escape(Date().formatted(date: .abbreviated, time: .standard)))</p>"
 
@@ -194,6 +222,10 @@ enum ExportService {
             for c in checklists {
                 body += ExportHelpers.checklistHTML(c)
             }
+        }
+
+        if scope == .all || scope == .workTime {
+            body += "<h2>Work time</h2><ul>" + workBlocks.map { "<li>\(escape(blockLine($0)))</li>" }.joined() + "</ul>"
         }
 
         return """

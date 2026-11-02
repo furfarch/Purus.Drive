@@ -175,3 +175,62 @@ final class ChecklistItem {
         self.note = note
     }
 }
+
+/// One tachograph activity: driving, other work, standby, rest/break or out (not under ARV 1).
+/// Rest is also every gap between blocks; `end == nil` is the running block.
+enum WorkActivity: String, Codable, CaseIterable, Identifiable {
+    case driving, work, standby, rest, out
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .driving: return "Driving"
+        case .work: return "Other work"
+        case .standby: return "Standby"
+        case .rest: return "Rest/Break"
+        case .out: return "Out"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .driving: return "steeringwheel"
+        case .work: return "hammer"
+        case .standby: return "hourglass"
+        case .rest: return "bed.double"
+        case .out: return "minus.circle"
+        }
+    }
+
+    /// driving, other work and standby; rest and out count as free time
+    var isActive: Bool { self == .driving || self == .work || self == .standby }
+}
+
+@Model
+final class WorkBlock {
+    var id: UUID = UUID()
+    var activity: WorkActivity = WorkActivity.rest
+    var start: Date = Date.now
+    var end: Date?
+    /// plate and name copied from the vehicle, so the record stays complete when the vehicle is deleted
+    var vehiclePlate: String = ""
+    var vehicleName: String = ""
+    var kmStart: Int?
+    var kmEnd: Int?
+    /// place with country, e.g. "Bern CH"; a border crossing is a new block with the new country
+    var placeStart: String = ""
+    var placeEnd: String = ""
+    /// ARV 1 Art. 12: driving extended to reach home or the company for a weekly rest
+    var exception: Bool = false
+    var note: String = ""
+
+    var lastEdited: Date = Date.now
+
+    init(activity: WorkActivity = .rest, start: Date = .now, end: Date? = nil) {
+        self.id = UUID()
+        self.activity = activity
+        self.start = start
+        self.end = end
+    }
+}

@@ -162,6 +162,12 @@ struct VehiclesListView: View {
                     .listRowSeparator(.hidden)
                 }
             }
+
+            row(.workTime) {
+                WorkTimeView()
+            } label: {
+                WorkTimeRow()
+            }
         }
         .refreshable {
             // Trigger an on-demand sync when in iCloud mode
@@ -220,6 +226,7 @@ struct VehiclesListView: View {
 enum VehicleSelection: Hashable {
     case vehicle(UUID)
     case trailer(UUID)
+    case workTime
 }
 
 /// Right column on wide screens.
@@ -238,6 +245,8 @@ struct VehicleDetailColumn: View {
             if let t = trailers.first(where: { $0.id == id && $0.modelContext != nil }) {
                 NavigationStack { NewTrailerFormView(existing: t, onClose: { selection = nil }) }.id(selection)
             } else { empty }
+        case .workTime:
+            NavigationStack { WorkTimeView() }
         case nil:
             empty
         }

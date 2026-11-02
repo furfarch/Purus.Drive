@@ -87,6 +87,7 @@ struct PurusDriveApp: App {
             DriveLog.self,
             Checklist.self,
             ChecklistItem.self,
+            WorkBlock.self,
             DeletedRecord.self,
         ])
 

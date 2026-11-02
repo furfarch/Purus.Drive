@@ -30,6 +30,7 @@ struct SectionsView: View {
     @Query(sort: \Trailer.lastEdited, order: .reverse) private var trailers: [Trailer]
     @Query(sort: \DriveLog.date, order: .reverse) private var logs: [DriveLog]
     @Query(sort: \Checklist.lastEdited, order: .reverse) private var checklists: [Checklist]
+    @Query(sort: \WorkBlock.start) private var workBlocks: [WorkBlock]
 
     // Wide screen (iPhone Duo unfolded, iPad): list left, vehicle right. The Duo reports compact width, so the real width decides too.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -115,7 +116,8 @@ struct SectionsView: View {
                                             vehicles: vehicles,
                                             trailers: trailers,
                                             logs: logs,
-                                            checklists: checklists
+                                            checklists: checklists,
+                                            workBlocks: workBlocks
                                         )
 
                                         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)

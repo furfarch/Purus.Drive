@@ -12,15 +12,17 @@ enum ImportService {
         var checklistsUpdated: Int = 0
         var driveLogsCreated: Int = 0
         var driveLogsUpdated: Int = 0
+        var workBlocksCreated: Int = 0
+        var workBlocksUpdated: Int = 0
         /// drive logs whose vehicle is not in the file or on this device
         var skipped: Int = 0
 
         var totalCreated: Int {
-            trailersCreated + vehiclesCreated + checklistsCreated + driveLogsCreated
+            trailersCreated + vehiclesCreated + checklistsCreated + driveLogsCreated + workBlocksCreated
         }
 
         var totalUpdated: Int {
-            trailersUpdated + vehiclesUpdated + checklistsUpdated + driveLogsUpdated
+            trailersUpdated + vehiclesUpdated + checklistsUpdated + driveLogsUpdated + workBlocksUpdated
         }
     }
 
@@ -234,8 +236,42 @@ enum ImportService {
                 }
             }
 
+            // 5) Work time blocks (no links; the vehicle is stored as plate text)
+            var blockIDs: [UUID] = []
+            if let dtos = payload.workBlocks {
+                let existing = Dictionary(try modelContext.fetch(FetchDescriptor<WorkBlock>()).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                for dto in dtos {
+                    let incomingLastEdited = try date(dto.lastEditedISO8601)
+                    let target: WorkBlock
+                    if let b = existing[dto.id] {
+                        guard incomingLastEdited > b.lastEdited else { continue }
+                        target = b
+                        summary.workBlocksUpdated += 1
+                    } else {
+                        target = WorkBlock()
+                        target.id = dto.id
+                        modelContext.insert(target)
+                        summary.workBlocksCreated += 1
+                    }
+                    target.activity = WorkActivity(rawValue: dto.activity) ?? .work
+                    target.start = try date(dto.startISO8601)
+                    target.end = try dto.endISO8601.map(date)
+                    target.vehiclePlate = dto.vehiclePlate
+                    target.vehicleName = dto.vehicleName
+                    target.kmStart = dto.kmStart
+                    target.kmEnd = dto.kmEnd
+                    target.placeStart = dto.placeStart
+                    target.placeEnd = dto.placeEnd
+                    target.exception = dto.exception
+                    target.note = dto.note
+                    // new records get "now" like the other types, so the import wins over old deletions
+                    target.lastEdited = existing[dto.id] == nil ? .now : incomingLastEdited
+                    blockIDs.append(dto.id)
+                }
+            }
+
             // a restored record must not be deleted again by its own old deletion marker
-            let createdIDs = Set(trailerByID.keys).union(vehicleByID.keys).union(checklistByID.keys).union(logByID.keys)
+            let createdIDs = Set(trailerByID.keys).union(vehicleByID.keys).union(checklistByID.keys).union(logByID.keys).union(blockIDs)
             for t in try modelContext.fetch(FetchDescriptor<DeletedRecord>()) where createdIDs.contains(t.id) {
                 modelContext.delete(t)
             }

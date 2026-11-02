@@ -5,6 +5,7 @@ enum ExportScope: String, CaseIterable, Identifiable {
     case vehicles
     case logs
     case checklists
+    case workTime
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum ExportScope: String, CaseIterable, Identifiable {
         case .vehicles: return "Vehicles (incl. trailers)"
         case .logs: return "Drive Logs"
         case .checklists: return "Checklists"
+        case .workTime: return "Work time"
         }
     }
 }
@@ -71,6 +73,22 @@ struct ExportPayload: Codable {
         var items: [ItemDTO]
     }
 
+    struct WorkBlockDTO: Codable {
+        var id: UUID
+        var activity: String
+        var startISO8601: String
+        var endISO8601: String?
+        var vehiclePlate: String
+        var vehicleName: String
+        var kmStart: Int?
+        var kmEnd: Int?
+        var placeStart: String
+        var placeEnd: String
+        var exception: Bool
+        var note: String
+        var lastEditedISO8601: String
+    }
+
     var generatedAtISO8601: String
     var scope: String
 
@@ -78,4 +96,6 @@ struct ExportPayload: Codable {
     var trailers: [TrailerDTO]?
     var driveLogs: [DriveLogDTO]?
     var checklists: [ChecklistDTO]?
+    /// optional: files from before the work-time log have none
+    var workBlocks: [WorkBlockDTO]? = nil
 }
