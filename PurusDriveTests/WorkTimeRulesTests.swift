@@ -113,4 +113,31 @@ struct WorkTimeRulesTests {
         #expect(r.status.drivingSinceBreak == 3 * h)
         #expect(r.status.dailyRestBy == start.addingTimeInterval(13 * h))
     }
+
+    /// Art. 11d: 11 h rest on a ferry with two short interruptions (40 min in total) is a regular daily rest
+    @Test func ferryRestWithTwoShortInterruptionsIsRegular() {
+        let start = monday.addingTimeInterval(6 * h)
+        var spans = day(start, [(.driving, 240), (.rest, 300), (.work, 20), (.rest, 200), (.driving, 20), (.rest, 160), (.driving, 120)])
+        spans.append(.init(activity: .ferry, start: start.addingTimeInterval(4 * h), end: start.addingTimeInterval(13 * h)))
+        let r = run(spans)
+        #expect(r.shifts.first?.restAfter?.kind == .dailyRegular)
+        #expect(!has(r, "Art. 9.1–9.2"))
+        #expect(!has(r, "Art. 8.1"))
+    }
+
+    /// Without ferry time the same day has no daily rest
+    @Test func sameRestWithoutFerryIsNotARest() {
+        let start = monday.addingTimeInterval(6 * h)
+        let r = run(day(start, [(.driving, 240), (.rest, 300), (.work, 20), (.rest, 200), (.driving, 20), (.rest, 160), (.driving, 120)]))
+        #expect(r.shifts.first?.restAfter == nil || r.shifts.first?.restAfter?.kind != .dailyRegular)
+    }
+
+    /// More than 1 h of interruptions: 11d does not apply
+    @Test func ferryInterruptionsOverOneHourDoNotCount() {
+        let start = monday.addingTimeInterval(6 * h)
+        var spans = day(start, [(.driving, 240), (.rest, 300), (.work, 70), (.rest, 400), (.driving, 120)])
+        spans.append(.init(activity: .ferry, start: start.addingTimeInterval(4 * h), end: start.addingTimeInterval(13 * h)))
+        let r = run(spans)
+        #expect(r.shifts.first?.restAfter?.kind != .dailyRegular)
+    }
 }

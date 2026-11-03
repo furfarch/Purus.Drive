@@ -180,6 +180,8 @@ final class ChecklistItem {
 /// Rest is also every gap between blocks; `end == nil` is the running block.
 enum WorkActivity: String, Codable, CaseIterable, Identifiable {
     case driving, work, standby, rest, out
+    /// Art. 11d: accompanying the vehicle on a ferry or train with a bunk/couchette (free time)
+    case ferry
 
     var id: String { rawValue }
 
@@ -190,6 +192,7 @@ enum WorkActivity: String, Codable, CaseIterable, Identifiable {
         case .standby: return "Standby"
         case .rest: return "Rest/Break"
         case .out: return "Out"
+        case .ferry: return "Ferry/Train"
         }
     }
 
@@ -200,10 +203,11 @@ enum WorkActivity: String, Codable, CaseIterable, Identifiable {
         case .standby: return "hourglass"
         case .rest: return "bed.double"
         case .out: return "minus.circle"
+        case .ferry: return "ferry"
         }
     }
 
-    /// driving, other work and standby; rest and out count as free time
+    /// driving, other work and standby; rest, out and ferry/train count as free time
     var isActive: Bool { self == .driving || self == .work || self == .standby }
 }
 

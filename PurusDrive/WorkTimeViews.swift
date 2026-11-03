@@ -37,6 +37,8 @@ struct WorkTimeView: View {
     @State private var startSheet: WorkActivity?
     @State private var newBlock: WorkBlock?
     @State private var showExport = false
+    @State private var askNext = false
+    @State private var endDay = false
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { tl in
@@ -72,6 +74,16 @@ struct WorkTimeView: View {
         .sheet(isPresented: $showExport) {
             NavigationStack { WorkExportSheet(blocks: blocks) }
         }
+        .sheet(isPresented: $endDay) {
+            NavigationStack { WorkEndSheet(blocks: blocks) }
+        }
+        .confirmationDialog("What now?", isPresented: $askNext, titleVisibility: .visible) {
+            let current = WorkLog.running(blocks)?.activity
+            ForEach([WorkActivity.driving, .work, .standby, .rest, .ferry].filter { $0 != current }) { a in
+                Button(a == .rest ? "Break" : a.title) { begin(a) }
+            }
+            Button("End of day", role: .destructive) { endDay = true }
+        }
         .onAppear { WorkLog.refreshReminder(context) }
     }
 
@@ -81,32 +93,10 @@ struct WorkTimeView: View {
     private func nowSection(_ r: WorkTimeRules.Report, now: Date) -> some View {
         let run = WorkLog.running(blocks)
         Section {
-            HStack {
-                Image(systemName: run?.activity.symbol ?? "pause.circle")
-                Text(run.map { "\($0.activity.title) since \(hm($0.start))" } ?? "Nothing running")
-                    .font(.headline)
+            TimelineView(.periodic(from: .now, by: 1)) { tick in
+                recorder(run, now: tick.date)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
-                ForEach(WorkActivity.allCases) { a in
-                    let current = run?.activity == a
-                    Button {
-                        if current { return }
-                        if WorkLog.needsStartSheet(a, blocks: blocks) { startSheet = a }
-                        else { WorkLog.start(a, blocks: blocks, context: context) }
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: a.symbol).font(.title3)
-                            Text(a.title).font(.caption)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(current ? Color.accentColor : Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10))
-                        .foregroundStyle(current ? Color.white : Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(current ? .isSelected : [])
-                }
-            }
-            .padding(.vertical, 4)
+            .listRowInsets(EdgeInsets())
 
             let s = r.status
             if run?.activity.isActive == true || s.dailyRestBy != nil {
@@ -129,8 +119,58 @@ struct WorkTimeView: View {
                     .foregroundStyle(.orange)
             }
         } footer: {
-            Text("Rest/Break and Out count as free time; so does every gap between blocks.")
+            Text("Break, Ferry/Train and off duty count as free time; so does every gap between blocks.")
         }
+    }
+
+    /// One button: off duty → Start work; recording → stop and ask what comes next.
+    @ViewBuilder
+    private func recorder(_ run: WorkBlock?, now: Date) -> some View {
+        let off = run == nil || run?.activity == .out
+        let a = run?.activity ?? .out
+        VStack(spacing: 14) {
+            if off {
+                VStack(spacing: 4) {
+                    Text("Off duty").font(.title2.bold())
+                    if let since = WorkLog.lastActiveEnd(blocks) {
+                        Text("since \(hm(since)) · \(dur(now.timeIntervalSince(since))) rest").foregroundStyle(.secondary)
+                    }
+                }
+            } else if let run {
+                HStack(spacing: 8) {
+                    if a.isActive {
+                        Image(systemName: "record.circle.fill").foregroundStyle(.red).symbolEffect(.pulse)
+                        Text("REC").font(.caption.bold()).foregroundStyle(.red)
+                    }
+                    Label(a == .rest ? "Break" : a.title, systemImage: a.symbol).font(.headline)
+                }
+                Text(clock(now.timeIntervalSince(run.start)))
+                    .font(.system(size: 52, weight: .semibold, design: .rounded).monospacedDigit())
+                Text("since \(hm(run.start))").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Button {
+                if off { startSheet = .driving } else { askNext = true }
+            } label: {
+                Text(off ? "Start work" : a == .rest ? "End break" : a == .ferry ? "Off the ferry" : "Stop \(a.title.lowercased())")
+                    .font(.title3.bold())
+                    .frame(maxWidth: .infinity, minHeight: 56)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(off ? .green : .red)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .background(off ? Color(.secondarySystemBackground) : a.color.opacity(0.18))
+    }
+
+    private func begin(_ a: WorkActivity) {
+        if WorkLog.needsStartSheet(a, blocks: blocks) { startSheet = a }
+        else { WorkLog.start(a, blocks: blocks, context: context) }
+    }
+
+    private func clock(_ t: TimeInterval) -> String {
+        let s = max(0, Int(t))
+        return String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
     }
 
     // MARK: Checks
@@ -286,7 +326,7 @@ struct WorkStartSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Vehicle.lastEdited, order: .reverse) private var vehicles: [Vehicle]
 
-    let activity: WorkActivity
+    @State var activity: WorkActivity
     let blocks: [WorkBlock]
 
     struct Earlier: Identifiable { let id = UUID(); var activity: WorkActivity = .work; var from: Date; var to: Date }
@@ -324,7 +364,10 @@ struct WorkStartSheet: View {
                     }
                 }
             }
-            Section(activity.title) {
+            Section {
+                Picker("Start with", selection: $activity) {
+                    ForEach(WorkActivity.allCases.filter(\.isActive)) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                }
                 DatePicker("Start", selection: $startAt, in: (freeSince ?? .distantPast)...Date.now)
                 if activity == .driving {
                     Picker("Vehicle", selection: $plate) {
@@ -343,7 +386,7 @@ struct WorkStartSheet: View {
                 }
             }
         }
-        .navigationTitle("Start \(activity.title.lowercased())")
+        .navigationTitle("Start work")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
@@ -384,6 +427,65 @@ struct WorkStartSheet: View {
         }
         WorkLog.start(activity, at: startAt, template: template, blocks: blocks, context: context)
         dismiss()
+    }
+}
+
+// MARK: - End of day
+
+struct WorkEndSheet: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    let blocks: [WorkBlock]
+    @State private var km: Int?
+    @State private var place = ""
+
+    private var lastDrive: WorkBlock? { WorkLog.lastDriving(blocks) }
+
+    var body: some View {
+        Form {
+            if let d = lastDrive {
+                Section("End of the drive (\(d.vehiclePlate.isEmpty ? dayText(d.start) : d.vehiclePlate))") {
+                    TextField("Km at end", text: digits($km)).keyboardType(.numberPad)
+                }
+            }
+            Section { TextField("Place (with country, e.g. Bern CH)", text: $place) }
+        }
+        .navigationTitle("End of day")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .topBarTrailing) { Button("End") { save() }.fontWeight(.semibold) }
+        }
+        .onAppear { km = lastDrive?.kmEnd; place = lastDrive?.placeEnd ?? "" }
+    }
+
+    private func save() {
+        let now = Date.now
+        for b in blocks where b.end == nil {
+            b.end = max(b.start, now)
+            if place.isEmpty == false { b.placeEnd = place }
+            b.lastEdited = now
+        }
+        if let d = lastDrive {
+            if let k = km { d.kmEnd = k }
+            if !place.isEmpty { d.placeEnd = place }
+            d.lastEdited = now
+        }
+        WorkLog.save(context)
+        dismiss()
+    }
+}
+
+private extension WorkActivity {
+    var color: Color {
+        switch self {
+        case .driving: return .blue
+        case .work: return .orange
+        case .standby: return .yellow
+        case .rest: return .green
+        case .ferry: return .teal
+        case .out: return .gray
+        }
     }
 }
 

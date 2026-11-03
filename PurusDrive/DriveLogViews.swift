@@ -1,6 +1,11 @@
 import SwiftUI
 import SwiftData
 
+// saves on every keystroke (value/format fields only commit when focus leaves)
+private func kmText(_ b: Binding<Int>) -> Binding<String> {
+    Binding(get: { b.wrappedValue == 0 ? "" : String(b.wrappedValue) }, set: { b.wrappedValue = Int($0.filter(\.isNumber)) ?? 0 })
+}
+
 struct DriveLogEditorView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -50,9 +55,9 @@ struct DriveLogEditorView: View {
             Section("Details") {
                 TextField("Reason", text: $log.reason)
                 HStack {
-                    TextField("Km start", value: $log.kmStart, format: .number)
+                    TextField("Km start", text: kmText($log.kmStart))
                         .keyboardType(.numberPad)
-                    TextField("Km end", value: $log.kmEnd, format: .number)
+                    TextField("Km end", text: kmText($log.kmEnd))
                         .keyboardType(.numberPad)
                 }
                 if log.kmEnd >= log.kmStart { Text("Distance: \(log.kmEnd - log.kmStart) km").foregroundStyle(.secondary) }

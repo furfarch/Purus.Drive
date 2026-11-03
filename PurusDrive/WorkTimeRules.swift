@@ -1,7 +1,7 @@
 import Foundation
 
 /// ARV 1 checks (SR 822.221, version of 1 May 2025) for the personal work-time log.
-/// Not covered: two drivers (Art. 9.6, 11c), ferry/train (11d), round trips (11a), abroad-only rules (11.7).
+/// Not covered: two drivers (Art. 9.6, 11c), round trips (11a), abroad-only rules (11.7).
 enum WorkTimeRules {
 
     struct Span: Equatable {
@@ -9,6 +9,8 @@ enum WorkTimeRules {
         var start: Date
         var end: Date
         var exception = false
+        /// work inside a ferry/train rest (Art. 11d): counts as work, but not for breaks
+        var inRest = false
     }
 
     struct Finding: Identifiable, Equatable {
@@ -34,7 +36,9 @@ enum WorkTimeRules {
         let end: Date
         let ongoing: Bool
         var kind: RestKind?
-        var hours: Double { end.timeIntervalSince(start) / 3600 }
+        /// Art. 11d: work inside a daily rest taken on a ferry/train (max 2 interruptions, 1 h in total)
+        var interrupted: TimeInterval = 0
+        var hours: Double { (end.timeIntervalSince(start) - interrupted) / 3600 }
     }
 
     /// From the end of one daily/weekly rest to the start of the next.
@@ -111,11 +115,33 @@ enum WorkTimeRules {
         }
         if let last = active.last, last.end < now { items.append(.off(Rest(start: last.end, end: now, ongoing: true))) }
 
+        // 1b) Art. 11d: a regular daily rest that includes ferry/train time (with bunk) may be interrupted
+        //     at most twice for 1 h in total; the interruptions stay work time but do not end the rest
+        let ferries = input.filter { $0.activity == .ferry }
+        func onFerry(_ r: Rest) -> Bool { ferries.contains { $0.start < r.end && $0.end > r.start } }
+        var merged: [Item] = []
+        var i = 0
+        while i < items.count {
+            guard case .off(let first) = items[i] else { merged.append(items[i]); i += 1; continue }
+            var best: (end: Int, rest: Rest, ons: [Item])?
+            var ons: [Item] = [], inter: TimeInterval = 0, ferry = onFerry(first), j = i
+            while ons.count < 2, j + 2 < items.count, case .on(var s) = items[j + 1], case .off(let next) = items[j + 2] {
+                inter += s.end.timeIntervalSince(s.start)
+                guard inter <= h else { break }
+                s.inRest = true
+                ons.append(.on(s)); ferry = ferry || onFerry(next); j += 2
+                let r = Rest(start: first.start, end: next.end, ongoing: next.ongoing, interrupted: inter)
+                if ferry && r.hours >= 11 { best = (j, r, ons) }
+            }
+            if let b = best { merged += b.ons + [.off(b.rest)]; i = b.end + 1 } else { merged.append(items[i]); i += 1 }
+        }
+        items = merged
+
         // 2) shifts, split at rests of 9 h or more
         var shiftItems: [[Item]] = [[]]
         var shiftRests: [Rest?] = []
         for item in items {
-            if case .off(let r) = item, r.end.timeIntervalSince(r.start) >= 9 * h {
+            if case .off(let r) = item, r.hours >= 9 {
                 shiftRests.append(r)
                 shiftItems.append([])
             } else {
@@ -146,6 +172,11 @@ enum WorkTimeRules {
                 switch item {
                 case .on(let s):
                     let d = s.end.timeIntervalSince(s.start)
+                    if s.inRest {
+                        if s.activity == .driving { shift.driving += d }
+                        if s.activity != .standby { shift.work += d } else { shift.standby += d }
+                        continue
+                    }
                     if s.exception { shift.exception = true }
                     switch s.activity {
                     case .driving:
@@ -182,7 +213,7 @@ enum WorkTimeRules {
             // rest that closes this shift
             if var rest = shiftRests[idx] {
                 let window = shift.start.addingTimeInterval(24 * h)
-                let inWindow = max(0, min(rest.end, window).timeIntervalSince(rest.start))
+                let inWindow = max(0, min(rest.end, window).timeIntervalSince(rest.start) - rest.interrupted)
                 let decided = !rest.ongoing || inWindow >= 11 * h || rest.end >= window
                 if decided {
                     if inWindow >= 11 * h { rest.kind = .dailyRegular }
@@ -196,7 +227,7 @@ enum WorkTimeRules {
                         add(rest.start, true, String(format: "Daily rest too short or too late: %.1f h within 24 h of the start (11 h needed, 9 h reduced)", inWindow / h), "Art. 9.1–9.2")
                     }
                 }
-                if rest.hours >= 24 {
+                if rest.hours >= 24 && rest.interrupted == 0 {   // 11d covers daily rest only
                     rest.kind = rest.hours >= 45 ? .weeklyRegular : (rest.ongoing ? rest.kind : .weeklyReduced)
                     if !rest.ongoing || rest.hours >= 45 {
                         if let prev = lastWeekly {
